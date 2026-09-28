@@ -44,6 +44,25 @@ int main() {
     for (int i = 0; i < 80; i++) { m.add(i * 100, 30); lvl = localLevel(lvl, m.force(), m.rate(), m.turbulence(), A, R); }
     CHECK(lvl == 0, "released barricade returns to GREEN");
   }
+  { // collapse: hard push, force vanishes, barricade tilts -> latched collapse
+    CrushMetrics m; CollapseDetector c; bool seen = false; uint32_t t = 0;
+    for (int i = 0; i < 30; i++, t += 100) { m.add(t, 20.0f * i); c.update(t, m.force(), m.peak(2000), 2, A); }
+    CHECK(!c.active(t), "rising push alone is not a collapse");
+    for (int i = 0; i < 10; i++, t += 100) { m.add(t, 3); seen |= c.update(t, m.force(), m.peak(2000), 35, A); }
+    CHECK(seen, "force drop + 35 deg tilt is a collapse");
+    CHECK(c.active(t + 20000) && !c.active(t + 40000), "collapse latches ~30 s");
+  }
+  { // staff lifting an unloaded barricade: tilt without load is NOT a collapse
+    CrushMetrics m; CollapseDetector c; bool seen = false;
+    for (int i = 0; i < 40; i++) { m.add(i * 100, 40); seen |= c.update(i * 100, m.force(), m.peak(2000), 40, A); }
+    CHECK(!seen, "tilting an unloaded barricade is not a collapse");
+  }
+  { // crowd simply steps back: force drops but barricade stays upright
+    CrushMetrics m; CollapseDetector c; bool seen = false;
+    for (int i = 0; i < 20; i++) { m.add(i * 100, 400); c.update(i * 100, m.force(), m.peak(2000), 1, A); }
+    for (int i = 20; i < 40; i++) { m.add(i * 100, 10); seen |= c.update(i * 100, m.force(), m.peak(2000), 2, A); }
+    CHECK(!seen, "relief without tilt is not a collapse");
+  }
   printf(fails ? "\n%d FAILED\n" : "\nALL PASSED\n", fails);
   return fails != 0;
 }
