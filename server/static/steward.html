@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06080c">
+<title>CrushGuard Steward</title>
+<style>
+  :root { color-scheme: dark; --bg:#06080c; --panel:#0d1218; --panel-2:#131a23; --border:#1f2a37; --border-2:#2b3a4b;
+    --text:#eef3f8; --text-2:#a9b6c4; --muted:#6f7d8d; --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+    --offline:#4a5563; --accent:#38bdf8; --steward:#a78bfa; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif; }
+  body { min-height: 100vh; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  [hidden] { display: none !important; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .16em; font-size: 14px; color: var(--text-2); margin-bottom: 14px; }
+  .brand svg { color: var(--accent); }
+  .brand .who { margin-left: auto; letter-spacing: 0; font-weight: 600; color: var(--steward); }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p { color: var(--text-2); margin: 0 0 14px; }
+  label.f { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 14px 0 6px; }
+  input[type=text] { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); }
+  .zones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .zone { display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 12px; border: 1px solid var(--border-2); background: var(--panel-2); font-weight: 600; min-height: 52px; }
+  .zone input { width: 22px; height: 22px; accent-color: var(--accent); }
+  .zone small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+  .btn { display: block; width: 100%; font: inherit; font-weight: 800; font-size: 18px; padding: 16px; border-radius: 14px; border: 0; cursor: pointer; min-height: 56px; }
+  .btn.primary { background: var(--accent); color: #041018; margin-top: 18px; }
+  .btn.go { background: var(--steward); color: #0b0f14; }
+  .btn.help { background: transparent; color: #ff8a8a; border: 2px solid var(--critical); }
+  .btn.ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border-2); font-size: 14px; min-height: 44px; padding: 10px; }
+  .status { border-radius: 20px; padding: 22px 18px; text-align: center; border: 2px solid var(--border); background: var(--panel); margin-bottom: 14px; transition: background .3s; }
+  .status .big { font-size: 34px; font-weight: 900; letter-spacing: .02em; }
+  .status .what { color: var(--text-2); margin-top: 4px; font-size: 16px; }
+  .status .todo { margin-top: 12px; font-size: 18px; font-weight: 700; }
+  .status[data-level=green] { border-color: var(--good); }
+  .status[data-level=green] .big { color: var(--good); }
+  .status[data-level=amber] { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, var(--panel)); }
+  .status[data-level=amber] .big { color: var(--warning); }
+  .status[data-level=red] { border-color: var(--critical); background: color-mix(in srgb, var(--critical) 28%, var(--panel)); animation: flash 0.8s ease-in-out infinite; }
+  .status[data-level=red] .big { color: #fff; }
+  .status[data-level=off] { border-color: var(--offline); }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--critical) 10%, var(--panel)); } }
+  @media (prefers-reduced-motion: reduce) { .status[data-level=red] { animation: none; } }
+  .rows { display: grid; gap: 8px; margin-bottom: 14px; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--border); }
+  .row .n { font-weight: 800; }
+  .row .l { color: var(--muted); font-size: 13px; }
+  .row .v { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 20px; text-align: right; }
+  .meter { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; }
+  .meter i { display: block; height: 100%; border-radius: 4px; background: var(--good); transition: width .3s; }
+  .row.amber { border-color: var(--warning); } .row.amber .meter i { background: var(--warning); }
+  .row.red { border-color: var(--critical); } .row.red .meter i { background: var(--critical); }
+  .actions { display: grid; gap: 10px; }
+  .note { font-size: 13px; color: var(--muted); text-align: center; margin-top: 12px; }
+  .conn { position: fixed; left: 0; right: 0; top: 0; padding: 8px 16px; background: var(--critical); color: #fff; font-weight: 700; text-align: center; font-size: 14px; }
+  .toast { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 12px; padding: 12px 14px; text-align: center; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="conn" id="conn" hidden>Connection lost: follow your beacon lights and radio</div>
+
+<div class="brand">
+  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 20V9m6 11V6m6 14V9m6 11V4M2 20h20" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+  CRUSHGUARD STEWARD <span class="who" id="who"></span>
+</div>
+
+<!-- check-in -->
+<section id="join">
+  <h1>Start your shift</h1>
+  <p>Pick the barricades you are standing at. Your phone will buzz if the crowd pushes too hard there.</p>
+  <label class="f" for="name">Your name</label>
+  <input type="text" id="name" autocomplete="given-name" placeholder="e.g. Ravi" maxlength="40">
+  <label class="f">Your zone</label>
+  <div class="zones" id="zones"></div>
+  <button class="btn primary" id="start">Start shift</button>
+  <div class="note">Keep this page open. Works on the venue Wi-Fi, no internet needed.</div>
+</section>
+
+<!-- on duty -->
+<section id="duty" hidden>
+  <div class="status" id="status" data-level="green">
+    <div class="big" id="sBig">ALL CLEAR</div>
+    <div class="what" id="sWhat">Your zone is normal</div>
+    <div class="todo" id="sTodo"></div>
+  </div>
+  <div class="rows" id="rows"></div>
+  <div class="actions">
+    <button class="btn go" id="onit" hidden>I'm on it</button>
+    <button class="btn help" id="help">Need backup here</button>
+    <button class="btn ghost" id="change">Change zone</button>
+  </div>
+  <div class="note" id="note"></div>
+</section>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const TODO = {
+  red: "Tell people to STOP pushing and step back. Open the relief gate if you are told to.",
+  amber: "Ask people to slow down and spread out. Watch the barricade.",
+  green: "",
+};
+let me = null, venue = null, state = null, lastLevel = "green", audio = null, pingTimer = null, alarmTimer = null;
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } } };
+
+async function api(path, body, method) {
+  const r = await fetch(path, body === undefined ? {} : { method: method || "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => t.hidden = true, 2600); }
+
+// ---------- check-in ----------
+async function buildJoin() {
+  const v = await api("/api/venue");
+  venue = v.venue;
+  const pre = new URLSearchParams(location.search).get("zone");
+  const saved = (pre || store.get("cg-zones") || "").split(",").filter(Boolean);
+  $("zones").innerHTML = venue.segments.map((s) => `<label class="zone"><input type="checkbox" value="${s.id}" ${saved.includes(s.id) ? "checked" : ""}>
+    <span>${s.id}<small>${esc(s.label)}</small></span></label>`).join("");
+  $("name").value = store.get("cg-name") || "";
+}
+$("start").onclick = async () => {
+  const name = $("name").value.trim();
+  const segments = [...document.querySelectorAll("#zones input:checked")].map((i) => i.value);
+  if (!name) { $("name").focus(); toast("Type your name first"); return; }
+  if (!segments.length) { toast("Pick at least one barricade"); return; }
+  unlockAlerts();
+  try {
+    me = await api("/api/stewards", { name, segments });
+  } catch (e) { toast("Cannot reach the control room. Check the Wi-Fi."); return; }
+  store.set("cg-name", name); store.set("cg-zones", segments.join(","));
+  $("who").textContent = me.name;
+  $("join").hidden = true; $("duty").hidden = false;
+  clearInterval(pingTimer);
+  pingTimer = setInterval(() => api(`/api/stewards/${me.id}/ping`, {}).catch(() => {}), 10000);
+  render();
+};
+$("change").onclick = () => { $("duty").hidden = true; $("join").hidden = false; stopAlarm(); };
+
+// ---------- alarm: vibration + sound (needs the Start tap to unlock) ----------
+function unlockAlerts() {
+  try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (e) { /* no audio */ }
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+function tone(freq, dur) {
+  if (!audio) return;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.frequency.value = freq; o.type = "square"; o.connect(g); g.connect(audio.destination);
+  g.gain.setValueAtTime(0.12, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dur);
+  o.start(); o.stop(audio.currentTime + dur);
+}
+function startAlarm(level) {
+  stopAlarm();
+  const once = () => {
+    if (level === "red") { if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400]); tone(960, 0.25); setTimeout(() => tone(720, 0.25), 300); }
+    else { if (navigator.vibrate) navigator.vibrate([200]); tone(660, 0.18); }
+  };
+  once();
+  alarmTimer = setInterval(once, level === "red" ? 2500 : 8000);
+}
+function stopAlarm() { clearInterval(alarmTimer); alarmTimer = null; if (navigator.vibrate) navigator.vibrate(0); }
+
+// ---------- live ----------
+function myAlert() {
+  if (!state || !me) return null;
+  return state.alerts.find((a) => a.active && a.segment && me.segments.includes(a.segment) && a.severity !== "info") || null;
+}
+function render() {
+  if (!state || !me || $("duty").hidden) return;
+  const mine = state.segments.filter((s) => me.segments.includes(s.id));
+  const rank = { off: -1, green: 0, amber: 1, red: 2 };
+  let worst = null;
+  for (const s of mine) { const lv = s.online ? s.level : "off"; if (!worst || rank[lv] > rank[worst.lv]) worst = { lv, s }; }
+  const lv = worst ? worst.lv : "green";
+  const box = $("status"); box.dataset.level = lv;
+  $("sBig").textContent = lv === "red" ? "DANGER" : lv === "amber" ? "PRESSURE RISING" : lv === "off" ? "SENSOR OFFLINE" : "ALL CLEAR";
+  $("sWhat").textContent = lv === "green" ? "Your zone is normal" : lv === "off" ? `${worst.s.id}: check the sensor node` :
+    `${worst.s.id} · ${worst.s.label} · ${Math.round(worst.s.f)} N` + (worst.s.eta_s ? ` · critical in ~${Math.round(worst.s.eta_s)} s` : "");
+  $("sTodo").textContent = TODO[lv] || "";
+  const red = state.thresholds.red_n;
+  const rows = mine.map((s) => {
+    const l = s.online ? s.level : "off";
+    return `<div class="row ${l}"><div><div class="n">${s.id}</div><div class="l">${esc(s.label)}</div></div>
+      <div class="v">${s.online ? Math.round(s.f) + " N" : "—"}</div>
+      <div class="meter"><i style="width:${s.online ? Math.min(100, (s.f / red) * 100) : 0}%"></i></div></div>`;
+  }).join("");
+  if ($("rows")._h !== rows) { $("rows").innerHTML = rows; $("rows")._h = rows; }
+  const a = myAlert();
+  const mineResp = a && a.responder === me.name;
+  $("onit").hidden = !a || mineResp;
+  $("note").textContent = mineResp ? "Control room knows you are responding." :
+    a && a.responder ? `${a.responder} is responding. Go and help if you can.` : "Control room can see you are on duty.";
+  if (lv !== lastLevel) {
+    if (lv === "red" || lv === "amber") startAlarm(lv); else stopAlarm();
+    lastLevel = lv;
+  }
+  if (mineResp && lv !== "red") stopAlarm();
+}
+$("onit").onclick = async () => {
+  const a = myAlert(); if (!a) return;
+  try { await api(`/api/alerts/${a.id}/respond`, { steward_id: me.id }); stopAlarm(); toast("Control room notified: you are on it"); }
+  catch (e) { toast("Could not reach control room"); }
+};
+$("help").onclick = async () => {
+  const seg = (state && state.segments.filter((s) => me.segments.includes(s.id)).sort((x, y) => y.score - x.score)[0]) || { id: me.segments[0] };
+  try { await api(`/api/stewards/${me.id}/help`, { segment: seg.id }); toast(`Backup requested at ${seg.id}`); if (navigator.vibrate) navigator.vibrate(80); }
+  catch (e) { toast("Could not reach control room"); }
+};
+
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => { $("conn").hidden = true; };
+  ws.onmessage = (ev) => { state = JSON.parse(ev.data); render(); };
+  ws.onclose = () => { $("conn").hidden = false; setTimeout(connect, 2000); };
+}
+buildJoin().catch(() => toast("Cannot reach the control room. Check the Wi-Fi."));
+connect();
+</script>
+</body>
+</html>
