@@ -182,9 +182,12 @@ def compute_stats(tl: dict) -> dict:
         amber_start = frames[a]["t"]
         involved = sorted({segs[k]["id"] for fr in frames[i:j + 1] for k, v in enumerate(fr["s"]) if v[5] == 2})
         peak = max(v[0] for fr in frames[i:j + 1] for v in fr["s"])
-        resp = next((e for e in events if e.get("kind") == "respond" and amber_start <= e["t"] <= end + 30), None)
+        # replay frames are sampled every `fs` seconds, so an action taken in the same second the
+        # warning started can be stamped just before the first amber frame: allow that slack
+        win0 = amber_start - max(fs, 2.0)
+        resp = next((e for e in events if e.get("kind") == "respond" and win0 <= e["t"] <= end + 30), None)
         act = next(((e, _is_mitigation(e)) for e in events
-                    if _is_mitigation(e) and amber_start <= e["t"] <= end), (None, None))
+                    if _is_mitigation(e) and win0 <= e["t"] <= end), (None, None))
         kinds = {al["key"].split(":")[0] for al in tl["alerts"]
                  if al.get("key") and amber_start <= al["started"] <= end}
         incidents.append({

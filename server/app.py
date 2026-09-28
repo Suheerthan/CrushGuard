@@ -270,9 +270,8 @@ def build_app(config_path: Path, serial_port: str | None, log_dir: Path | None,
     @app.post("/api/segments/{seg_id}/restore", summary="Barricade put back up: clear the collapse alarm")
     def restore(seg_id: str):
         rt.engine.clear_collapse(seg_id)
-        if rt.sim and seg_id in rt.sim.collapses:
-            rt.sim.collapses.pop(seg_id, None)
-            rt.sim.detectors[seg_id].clear()
+        if rt.sim:
+            rt.sim.restore(seg_id)
         rt.log_event("restore", segment=seg_id)
         return {"ok": True}
 
@@ -393,8 +392,7 @@ def build_app(config_path: Path, serial_port: str | None, log_dir: Path | None,
             if cmd.on:
                 rt.sim.collapse(cmd.value)
             else:                                   # barricade put back up
-                rt.sim.collapses.pop(cmd.value, None)
-                rt.sim.detectors[cmd.value].clear()
+                rt.sim.restore(cmd.value)
                 rt.engine.clear_collapse(cmd.value)
         elif cmd.action == "env":
             try:

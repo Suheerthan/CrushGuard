@@ -50,6 +50,7 @@ class CrowdSimulator:
         self.true_force = {i: 0.0 for i in self.ids}
         # barricade collapse + tilt
         self.collapses: dict[str, float] = {}           # segment -> start time
+        self.restored: dict[str, float] = {}            # segment -> time it was put back up
         self.detectors = {i: CollapseDetector() for i in self.ids}
         self.tilt = {i: 1.0 for i in self.ids}
         # venue weather (the gateway's DHT22 in real life)
@@ -74,6 +75,12 @@ class CrowdSimulator:
     def push(self, seg_id: str) -> None:
         if seg_id in self.ids:
             self.pushes.append((seg_id, self.t or 0.0))
+
+    def restore(self, seg_id: str) -> None:
+        """Barricade put back up: the crowd leans on it again over a few seconds."""
+        if self.collapses.pop(seg_id, None) is not None:
+            self.restored[seg_id] = self.t or 0.0
+            self.detectors[seg_id].clear()
 
     def collapse(self, seg_id: str) -> None:
         """Crowd surges into a barricade until it gives way (force vanishes, it tilts over)."""
@@ -154,6 +161,12 @@ class CrowdSimulator:
                 return max(0.0, 3.0 + self.rng.gauss(0, 1.5))
         else:
             self.tilt[sid] = 1.0 + abs(self.rng.gauss(0, 0.3))
+            if sid in self.restored:                       # people step back up to it slowly
+                k = (t - self.restored[sid]) / 6.0
+                if k < 1.0:
+                    f = 3.0 + (f - 3.0) * max(0.0, k)
+                else:
+                    del self.restored[sid]
         return max(0.0, f + self.rng.gauss(0, 4.0))
 
     # ---------------- main step ----------------
