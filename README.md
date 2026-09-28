@@ -23,6 +23,20 @@ buzzer and keeps working if the control room goes offline.
 
 ---
 
+## Control room features
+
+| View | What it does |
+|---|---|
+| **Venue** | Live barricade map with glowing pressure zones, alerts (critical first), per-segment detail with a **30-second pressure forecast**, sensor health, stewards on the ground, simulator |
+| **Stewards (phones)** | Stewards scan the QR code on the Venue view (same Wi-Fi, no internet). They pick their barricades; the phone **vibrates and beeps** when their zone goes amber/red, tells them what to do, and has **I'm on it** and **Need backup** buttons. The control room sees who is responding where. |
+| **National** | Map of India with every venue reporting to one state / national control room, sorted by risk. The main venue is real; the others are simulated for the demo. |
+| **Replay** | Every session is logged. Pick one, press play (1×/5×/20×) or drag the timeline, and see exactly what the control room saw: pressure, alerts, operator actions and steward responses. For post-event review and inquiries. |
+
+The forecast is `f(t) = f + rate·τ·(1 − e^(−t/τ))` with τ = 15 s: it follows the current rise at
+first and then levels off, so it does not predict impossible straight-line growth.
+
+---
+
 ## What is in this repo
 
 ```
@@ -32,8 +46,9 @@ firmware/
   gateway/     ESP32 plugged into the laptop: radio <-> USB serial               (gateway.ino)
 server/
   app.py       control-room server + open REST/WebSocket API
-  crushguard/  risk engine, crowd simulator, serial bridge
-  static/      dashboard (plain HTML/JS, no build step)
+  crushguard/  risk engine + forecast, simulator, stewards, replay, national network, serial bridge
+  static/      control room (index.html), steward phone page (steward.html), India map
+  national.json  venues shown in the National view
   config.json  venue layout, segments, gates, thresholds, PA messages
 tests/         C++ and Python tests (including C++/Python parity)
 ```
@@ -46,7 +61,11 @@ pip install -r requirements.txt
 python app.py --sim
 ```
 
-Open **http://localhost:8000**. The **Simulator** panel at the bottom lets you:
+Open **http://localhost:8000**. The terminal also prints the steward link
+(`http://<laptop-ip>:8000/steward`) for phones on the same Wi-Fi. If a phone cannot open it,
+allow Python through the Windows firewall (private networks) when Windows asks.
+
+The **Simulator** panel at the bottom lets you:
 
 | Button | What happens |
 |---|---|
@@ -162,6 +181,9 @@ Interactive docs at **/docs** when the server runs.
 | `POST /api/alerts/{id}/ack` | acknowledge |
 | `GET /api/pa?segment=S3&lang=hi` | announcement text |
 | `POST /api/nodes/{n}/identify` | blink a node's beacon to find it on site |
+| `POST /api/stewards` · `POST /api/alerts/{id}/respond` · `POST /api/stewards/{id}/help` | steward check-in, "I'm on it", backup request |
+| `GET /api/national` | every venue's status for a state / national control room |
+| `GET /api/sessions` · `GET /api/replay/{name}` | logged sessions and their rebuilt timeline |
 | `WS /ws` | 5 Hz live stream |
 
 Every session is logged to `server/logs/session-*.csv` for post-event review and inquiries.
@@ -171,8 +193,14 @@ Every session is logged to `server/logs/session-*.csv` for post-event review and
 1. **Hook (20 s):** "Most crowd-crush deaths are caused by pressure, not by the number of people. CCTV can count people, but it can't see pressure."
 2. **Live hardware (60 s):** two teammates lean on the railing slowly. The dashboard goes amber with a countdown, then red; the beacon flashes; the PA plays in Hindi.
 3. **Surge (40 s):** switch to the simulator "Crowd surge wave". The zone goes red even though no single barricade is overloaded yet. That early warning is what makes it useful.
-4. **Response (30 s):** press Stop entry + Open gates. Pressure drops and alerts clear.
-5. **Scale (30 s):** ~₹1,000 per node, clamps onto existing barricades, no internet needed, open API for any state's control room. Targets: Nashik Kumbh 2027, railway footbridges, temple queue complexes.
+4. **Response (30 s):** a teammate's phone (steward page) buzzes; they tap **I'm on it** and the control room shows them responding. Press Stop entry + Open gates. Pressure drops and alerts clear.
+5. **Scale (30 s):** switch to **National**: many venues on one screen. ~₹1,000 per node, clamps onto existing barricades, no internet needed, open API for any state's control room. Targets: Nashik Kumbh 2027, railway footbridges, temple queue complexes.
+6. **Accountability (optional, 20 s):** open **Replay** and drag to the moment it went red: every alert, action and steward response is on the timeline.
+
+## Credits
+
+India map outline: [DataMeet India community](https://github.com/datameet/maps)
+(`Country/india-composite.geojson`), CC BY 4.0, simplified for offline use.
 
 ## Honest positioning
 
