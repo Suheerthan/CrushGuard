@@ -99,3 +99,22 @@ inline uint8_t localLevel(uint8_t prev, float force, float rate, float turb,
   if (prev == 1) return effective > amber_n * (1 - hyst) ? 1 : 0;
   return effective >= amber_n ? 1 : 0;
 }
+
+// Barricade collapse: the crowd was pushing hard, the force suddenly vanished AND the
+// barricade tilted. That is the moment people fall forward, so it is always critical.
+// Latched for 30 s so a single event is never missed by the control room.
+class CollapseDetector {
+ public:
+  // recent_peak = max force over the last ~2 s, tilt_deg = tilt from the mounting position
+  bool update(uint32_t t_ms, float force, float recent_peak, float tilt_deg, float amber_n) {
+    bool loaded = recent_peak >= 0.6f * amber_n;
+    bool dropped = force < 0.25f * recent_peak;
+    bool tilted = tilt_deg >= 15.0f;
+    if (loaded && dropped && tilted) until_ = t_ms + 30000;
+    return active(t_ms);
+  }
+  bool active(uint32_t t_ms) const { return until_ != 0 && (int32_t)(until_ - t_ms) > 0; }
+  void clear() { until_ = 0; }
+ private:
+  uint32_t until_ = 0;
+};

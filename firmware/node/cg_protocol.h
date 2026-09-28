@@ -26,6 +26,7 @@ enum CgCmd : uint8_t {
 #define CGF_LOADCELL_OK 0x01
 #define CGF_IMU_OK      0x02
 #define CGF_OVERRIDE    0x04   // level is currently forced by the server
+#define CGF_COLLAPSE    0x08   // barricade collapse detected (latched 30 s)
 
 typedef struct __attribute__((packed)) {
   uint8_t  magic;         // CG_MAGIC
@@ -42,7 +43,7 @@ typedef struct __attribute__((packed)) {
   float    sway_ms2;      // horizontal vibration RMS of the barricade (m/s^2)
   uint8_t  level;         // CgLevel the node is showing on its beacon
   uint8_t  flags;         // CGF_*
-  uint16_t reserved;
+  uint16_t tilt_ddeg;     // barricade tilt from its mounting position, 0.1 degree units
 } CgTelemetry;            // 40 bytes
 
 typedef struct __attribute__((packed)) {
