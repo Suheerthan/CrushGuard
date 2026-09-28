@@ -1,0 +1,39 @@
+{
+  "venue": {
+    "name": "Demo rally ground",
+    "width_m": 60,
+    "height_m": 40,
+    "stage": {"x": 15, "y": 2, "w": 30, "h": 6},
+    "entries": [
+      {"id": "E1", "label": "Main entry", "x": 30, "y": 39}
+    ],
+    "gates": [
+      {"id": "G1", "label": "Left relief gate", "x": 3,  "y": 14, "segments": ["S1", "S2", "S7"]},
+      {"id": "G2", "label": "Right relief gate", "x": 57, "y": 14, "segments": ["S5", "S6", "S8"]}
+    ],
+    "segments": [
+      {"id": "S1", "node": 1, "label": "Front barricade 1", "x1": 6,  "y1": 12, "x2": 14, "y2": 12},
+      {"id": "S2", "node": 2, "label": "Front barricade 2", "x1": 14, "y1": 12, "x2": 22, "y2": 12},
+      {"id": "S3", "node": 3, "label": "Front barricade 3", "x1": 22, "y1": 12, "x2": 30, "y2": 12},
+      {"id": "S4", "node": 4, "label": "Front barricade 4", "x1": 30, "y1": 12, "x2": 38, "y2": 12},
+      {"id": "S5", "node": 5, "label": "Front barricade 5", "x1": 38, "y1": 12, "x2": 46, "y2": 12},
+      {"id": "S6", "node": 6, "label": "Front barricade 6", "x1": 46, "y1": 12, "x2": 54, "y2": 12},
+      {"id": "S7", "node": 7, "label": "Left side rail",   "x1": 6,  "y1": 12, "x2": 6,  "y2": 30},
+      {"id": "S8", "node": 8, "label": "Right side rail",  "x1": 54, "y1": 12, "x2": 54, "y2": 30}
+    ]
+  },
+  "thresholds": {
+    "amber_n": 250,
+    "red_n": 450,
+    "note": "Demo values for a push on a table-top rail. On site, set red_n from the barricade's rated load and calibrate every clamp."
+  },
+  "timing": {
+    "offline_after_s": 3.0,
+    "low_battery_mv": 3500
+  },
+  "pa_messages": {
+    "en": "Attention please. People near {label}, stop pushing and take one step back. {gate} is opening now.",
+    "hi": "कृपया ध्यान दें। {label} के पास के लोग धक्का न दें और एक कदम पीछे हटें। {gate} अभी खोला जा रहा है।",
+    "ta": "கவனிக்கவும். {label} அருகில் உள்ளவர்கள் தள்ள வேண்டாம், ஒரு அடி பின்னால் செல்லுங்கள். {gate} இப்போது திறக்கப்படுகிறது."
+  }
+}
