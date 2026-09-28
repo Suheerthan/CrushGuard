@@ -30,7 +30,18 @@ buzzer and keeps working if the control room goes offline.
 | **Venue** | Live barricade map with glowing pressure zones, alerts (critical first), per-segment detail with a **30-second pressure forecast**, sensor health, stewards on the ground, simulator |
 | **Stewards (phones)** | Stewards scan the QR code on the Venue view (same Wi-Fi, no internet). They pick their barricades; the phone **vibrates and beeps** when their zone goes amber/red, tells them what to do, and has **I'm on it** and **Need backup** buttons. The control room sees who is responding where. |
 | **National** | Map of India with every venue reporting to one state / national control room, sorted by risk. The main venue is real; the others are simulated for the demo. |
-| **Replay** | Every session is logged. Pick one, press play (1×/5×/20×) or drag the timeline, and see exactly what the control room saw: pressure, alerts, operator actions and steward responses. For post-event review and inquiries. |
+| **Replay** | Every session is logged. Pick one, press play (1×/5×/20×) or drag the timeline, and see exactly what the control room saw: pressure, alerts, operator actions and steward responses. A summary shows how early the warning came and how fast stewards and the control room responded. |
+| **Incident report** | One click in Replay opens a printable report (Save as PDF): plain-language summary, pressure chart, every incident with warning time, steward response and first action, per-barricade exposure, and the full timeline, with signature lines for police / safety officer. |
+| **Plan** | Before the event: enter area, expected crowd, front-of-stage share, exits and entries. CrushGuard shows the crowd density (comfortable → crush risk), time to empty the ground, entry queue, how many sensors are needed and what to change. |
+
+**Barricade collapse detection.** If the crowd was pushing hard and the force suddenly disappears while the
+barricade tilts over (motion sensor), CrushGuard raises **BARRICADE DOWN**: the most dangerous moment,
+because people fall forward. The node flashes red/amber with a siren, the control room gets a critical alert,
+and steward phones show what to do. Press **Barricade back up** once it is fixed.
+
+**Heat stress.** An optional DHT22 sensor on the gateway measures temperature and humidity. CrushGuard computes
+the heat index (US National Weather Service formula) and, when it is hot and humid, treats the same push as more
+dangerous (limits lowered 5–30 % by category) and raises a heat alert with actions (water, shade, slow entry).
 
 The forecast is `f(t) = f + rate·τ·(1 − e^(−t/τ))` with τ = 15 s: it follows the current rise at
 first and then levels off, so it does not predict impossible straight-line growth.
@@ -74,6 +85,11 @@ The **Simulator** panel at the bottom lets you:
 | Simulate push here | a sharp push on the selected segment (stays local, recovers) |
 | Stop entry / Open G1 / Open G2 | the response actions: watch the pressure fall |
 | Take node offline | shows sensor health monitoring and the offline alert |
+| Barricade collapse at S… | the selected barricade gives way: force vanishes, it tilts 35°, BARRICADE DOWN |
+| Weather: Mild / Hot & humid / Heatwave | changes the heat index; watch the limits tighten and the heat alert |
+
+The **Response** buttons (Stop entry, Open G1/G2) work in both modes. With real sensors they are the
+operator's action log, so the incident report can show how fast the control room acted.
 
 Every simulated node runs **the same maths as the real firmware** (tests/test_parity.py checks
 this), and produces the same messages as the real gateway, so the dashboard and server do not
@@ -109,6 +125,7 @@ Arduino IDE: install the **esp32 by Espressif** board package (2.x or 3.x both w
 | Active buzzer 5 V + BC547 transistor | 1 | 25 |
 | Power: USB power bank for the demo (or 18650 + TP4056 + HT7333 LDO) | 1 | 150–300 |
 | 3D-printed clamp + M4 bolts + rubber strip | 1 | 100 |
+| *Optional, gateway only:* DHT22 temperature/humidity sensor + 10 kΩ resistor | 1 | 150–250 |
 | **Total** | | **~₹1,000–1,400** |
 
 Plus one ESP32 for the gateway. Compare: imported barrier load systems cost many lakhs per venue.
@@ -124,6 +141,7 @@ Plus one ESP32 for the gateway. Compare: imported barrier load systems cost many
 | LED green / amber / red (via 220 Ω) | GPIO25 / GPIO26 / GPIO27 |
 | Buzzer (via transistor) | GPIO14 |
 | Battery + → 100 k → **GPIO35** → 100 k → GND | battery monitor |
+| *Gateway:* DHT22 DATA → **GPIO15** (10 kΩ pull-up to 3V3), VCC → 3V3 | heat stress (optional) |
 
 ### The clamp (mechanical design)
 
@@ -183,7 +201,11 @@ Interactive docs at **/docs** when the server runs.
 | `POST /api/nodes/{n}/identify` | blink a node's beacon to find it on site |
 | `POST /api/stewards` · `POST /api/alerts/{id}/respond` · `POST /api/stewards/{id}/help` | steward check-in, "I'm on it", backup request |
 | `GET /api/national` | every venue's status for a state / national control room |
-| `GET /api/sessions` · `GET /api/replay/{name}` | logged sessions and their rebuilt timeline |
+| `GET /api/sessions` · `GET /api/replay/{name}` | logged sessions, rebuilt timeline and response statistics |
+| `POST /api/action` | log an operator action (stop entry, open gate, note) |
+| `POST /api/segments/{id}/restore` | barricade put back up after a collapse |
+| `POST /api/plan` | pre-event capacity plan |
+| `GET /report?session=…` | printable incident report |
 | `WS /ws` | 5 Hz live stream |
 
 Every session is logged to `server/logs/session-*.csv` for post-event review and inquiries.
@@ -195,7 +217,19 @@ Every session is logged to `server/logs/session-*.csv` for post-event review and
 3. **Surge (40 s):** switch to the simulator "Crowd surge wave". The zone goes red even though no single barricade is overloaded yet. That early warning is what makes it useful.
 4. **Response (30 s):** a teammate's phone (steward page) buzzes; they tap **I'm on it** and the control room shows them responding. Press Stop entry + Open gates. Pressure drops and alerts clear.
 5. **Scale (30 s):** switch to **National**: many venues on one screen. ~₹1,000 per node, clamps onto existing barricades, no internet needed, open API for any state's control room. Targets: Nashik Kumbh 2027, railway footbridges, temple queue complexes.
-6. **Accountability (optional, 20 s):** open **Replay** and drag to the moment it went red: every alert, action and steward response is on the timeline.
+6. **Collapse (20 s):** press **Barricade collapse**: BARRICADE DOWN on the big screen, the node siren and every steward phone.
+7. **Accountability (30 s):** open **Replay**, then **Incident report**: "CrushGuard warned 13 s before critical, steward responded, entry stopped 3 s after."
+8. **Prevention (20 s, if asked):** the **Plan** tab shows the same venue was unsafe before the gates even opened.
+
+## Planning figures used
+
+- Standing crowd density: up to 2 people/m² comfortable (UK Purple Guide planning figure), 5 people/m² the upper
+  limit for standing crowds, above 6 people/m² crowds become unstable ([G. Keith Still](https://www.gkstill.com/Support/crowd-density/CrowdDensity-1.html)).
+- Flow through exits: 82 people per metre per minute on level ground, 66 on steps or slopes ([InCrowd Safety summary of UK guidance](https://incrowdsafety.co.uk/flow-rates-densities-and-the-maths/)).
+- Heat index: US National Weather Service formula and categories. The risk multipliers per category are a CrushGuard design choice.
+
+The planner is guidance for a first check, not a replacement for a professional crowd safety plan or local rules
+(for example NDMA crowd-management guidelines).
 
 ## Credits
 
