@@ -9,110 +9,182 @@
 <body>
 <header class="top">
   <div class="brand">
-    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 20V9m6 11V6m6 14V9m6 11V4M2 20h20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-    <span>CrushGuard</span>
-    <span class="venue" id="venueName">—</span>
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 20V9m6 11V6m6 14V9m6 11V4M2 20h20" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+    <span class="brand-name">CRUSHGUARD</span>
+    <span class="brand-sub">Crowd-pressure command centre</span>
   </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab on" data-view="venue" role="tab">Venue</button>
+    <button class="tab" data-view="national" role="tab">National</button>
+    <button class="tab" data-view="replay" role="tab">Replay</button>
+  </nav>
   <div class="top-right">
-    <span class="badge" id="modeBadge">connecting…</span>
-    <span class="badge" id="linkBadge">link</span>
+    <span class="chip" id="modeChip">connecting…</span>
+    <span class="chip" id="stewardChip">0 stewards</span>
+    <span class="chip" id="linkChip">link</span>
     <span class="clock" id="clock">--:--:--</span>
   </div>
 </header>
 
-<section class="status-banner" id="banner" data-level="green">
-  <span class="status-icon" id="bannerIcon">✓</span>
-  <div>
-    <div class="status-title" id="bannerTitle">All barricades normal</div>
-    <div class="status-sub" id="bannerSub">Waiting for data</div>
+<section class="banner" id="banner" data-level="green">
+  <span class="b-icon" id="bIcon">✓</span>
+  <div class="b-text">
+    <div class="b-title" id="bTitle">All barricades normal</div>
+    <div class="b-sub" id="bSub">Waiting for data</div>
   </div>
-  <div class="banner-actions">
+  <div class="b-actions" id="bActions">
     <select id="paLang" aria-label="Announcement language">
       <option value="en">English</option><option value="hi">हिन्दी</option><option value="ta">தமிழ்</option>
     </select>
-    <button id="paBtn" class="btn">Play PA announcement</button>
-    <label class="chk"><input type="checkbox" id="autoPa"> Auto PA on critical</label>
+    <button id="paBtn" class="btn">Play PA</button>
+    <label class="chk"><input type="checkbox" id="autoPa"> Auto PA</label>
   </div>
 </section>
 
-<main class="grid">
-  <section class="card map-card">
-    <div class="card-head">
-      <h2>Venue: barricade pressure</h2>
+<!-- ============================ VENUE ============================ -->
+<main class="view venue-view" id="view-venue">
+  <section class="panel map-panel">
+    <div class="p-head">
+      <h2>Barricade pressure <span class="muted" id="venueName"></span></h2>
       <div class="legend">
-        <span><i class="sw green"></i>Normal</span>
-        <span><i class="sw amber"></i>Building</span>
-        <span><i class="sw red"></i>Critical</span>
-        <span><i class="sw off"></i>Offline</span>
+        <span><i class="sw green"></i>Normal</span><span><i class="sw amber"></i>Building</span>
+        <span><i class="sw red"></i>Critical</span><span><i class="sw off"></i>Offline</span>
+        <span><i class="sw steward"></i>Steward</span>
       </div>
     </div>
-    <svg id="map" role="img" aria-label="Venue map with barricade segments"></svg>
-    <p class="hint" id="mapHint">Click a barricade segment to see its details.</p>
+    <svg id="map" class="venue-map" role="img" aria-label="Venue map"></svg>
   </section>
 
-  <section class="card alerts-card">
-    <div class="card-head"><h2>Alerts</h2><span class="muted" id="alertCount">0 active</span></div>
+  <section class="panel alerts-panel">
+    <div class="p-head"><h2>Alerts</h2><span class="muted" id="alertCount">0 active</span></div>
     <ul id="alerts" class="alerts"></ul>
   </section>
 
-  <section class="card detail-card">
-    <div class="card-head">
-      <h2 id="detailTitle">Segment —</h2>
-      <div class="detail-actions">
-        <button class="btn small" id="pushBtn" hidden>Simulate push here</button>
+  <section class="panel detail-panel">
+    <div class="p-head">
+      <h2 id="detailTitle">Segment</h2>
+      <div class="row-gap">
+        <button class="btn small" id="pushBtn" hidden>Simulate push</button>
         <button class="btn small ghost" id="identifyBtn">Blink beacon</button>
       </div>
     </div>
     <div class="tiles">
-      <div class="tile"><div class="tile-label">Push force</div><div class="tile-val" id="tForce">—</div></div>
-      <div class="tile"><div class="tile-label">Rising at</div><div class="tile-val" id="tRate">—</div></div>
-      <div class="tile"><div class="tile-label">Time to critical</div><div class="tile-val" id="tEta">—</div></div>
-      <div class="tile"><div class="tile-label">Surging</div><div class="tile-val" id="tTurb">—</div></div>
+      <div class="tile"><div class="t-label">Push force</div><div class="t-val" id="tForce">—</div></div>
+      <div class="tile"><div class="t-label">Rising at</div><div class="t-val" id="tRate">—</div></div>
+      <div class="tile"><div class="t-label">Time to critical</div><div class="t-val" id="tEta">—</div></div>
+      <div class="tile"><div class="t-label">In 30 s</div><div class="t-val" id="tFc">—</div></div>
     </div>
     <div class="chart-wrap">
-      <svg id="chart" role="img" aria-label="Push force over the last two minutes"></svg>
+      <svg id="chart" class="chart" role="img" aria-label="Push force, last 2 minutes and 30 second forecast"></svg>
       <div class="tooltip" id="tip" hidden></div>
     </div>
     <p class="muted small" id="reasons"></p>
   </section>
 
-  <section class="card nodes-card">
-    <div class="card-head"><h2>Sensor nodes</h2><span class="muted" id="nodeSummary"></span></div>
+  <section class="panel nodes-panel">
+    <div class="p-head"><h2>Sensor nodes</h2><span class="muted" id="nodeSummary"></span></div>
     <div class="table-wrap">
-      <table id="nodes">
-        <thead><tr><th>Seg</th><th>Location</th><th>Status</th><th class="num">Force N</th><th class="num">Risk</th><th>Link</th><th class="num">Battery</th><th class="num">Signal</th><th>Sensors</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <table id="nodes"><thead><tr><th>Seg</th><th>Location</th><th>Status</th><th class="num">Force N</th><th class="num">Risk</th><th>Steward</th><th>Link</th><th class="num">Battery</th><th class="num">Signal</th></tr></thead><tbody></tbody></table>
     </div>
   </section>
 
-  <section class="card sim-card" id="simCard" hidden>
-    <div class="card-head"><h2>Simulator (no hardware needed)</h2><span class="muted" id="simStatus"></span></div>
-    <div class="sim-row">
+  <section class="panel stewards-panel">
+    <div class="p-head"><h2>Stewards on the ground</h2><span class="muted" id="stewardSummary"></span></div>
+    <div class="steward-join">
+      <img id="qr" alt="QR code to open the steward page" hidden>
+      <div>
+        <div class="small muted">Stewards scan this with their phone (same Wi-Fi):</div>
+        <div class="url" id="stewardUrl">…</div>
+      </div>
+    </div>
+    <ul class="stewards" id="stewardList"></ul>
+  </section>
+
+  <section class="panel sim-panel" id="simPanel" hidden>
+    <div class="p-head"><h2>Simulator</h2><span class="muted" id="simStatus"></span></div>
+    <div class="sim-grid">
       <span class="lbl">Scenario</span>
-      <button class="btn seg" data-scn="calm">Calm</button>
-      <button class="btn seg" data-scn="buildup">Crowd build-up</button>
-      <button class="btn seg" data-scn="surge">Crowd surge wave</button>
-    </div>
-    <div class="sim-row">
+      <div class="row-gap">
+        <button class="btn" data-scn="calm">Calm</button>
+        <button class="btn" data-scn="buildup">Crowd build-up</button>
+        <button class="btn" data-scn="surge">Crowd surge wave</button>
+      </div>
       <span class="lbl">Response</span>
-      <button class="btn toggle" id="entryBtn">Stop entry</button>
-      <button class="btn toggle" data-gate="G1">Open G1</button>
-      <button class="btn toggle" data-gate="G2">Open G2</button>
-    </div>
-    <div class="sim-row">
+      <div class="row-gap">
+        <button class="btn" id="entryBtn">Stop entry</button>
+        <button class="btn" data-gate="G1">Open G1</button>
+        <button class="btn" data-gate="G2">Open G2</button>
+      </div>
       <span class="lbl">Faults</span>
-      <select id="failSel"></select>
-      <button class="btn toggle" id="failBtn">Take node offline</button>
+      <div class="row-gap"><select id="failSel"></select><button class="btn" id="failBtn">Take node offline</button></div>
     </div>
   </section>
 </main>
 
+<!-- ============================ NATIONAL ============================ -->
+<main class="view national-view" id="view-national" hidden>
+  <section class="kpis">
+    <div class="kpi"><div class="k-val" id="kVenues">—</div><div class="k-label">Venues monitored</div></div>
+    <div class="kpi"><div class="k-val" id="kSensors">—</div><div class="k-label">Sensors online</div></div>
+    <div class="kpi red"><div class="k-val" id="kRed">—</div><div class="k-label">Critical venues</div></div>
+    <div class="kpi amber"><div class="k-val" id="kAmber">—</div><div class="k-label">Pressure building</div></div>
+  </section>
+  <section class="panel india-panel">
+    <div class="p-head"><h2>Live network</h2><span class="muted small">Other venues are simulated for this demo</span></div>
+    <svg id="india" class="india" role="img" aria-label="Map of India with monitored venues"></svg>
+    <div class="tooltip" id="natTip" hidden></div>
+    <p class="attrib">Map outline: <a href="https://github.com/datameet/maps" target="_blank" rel="noopener">DataMeet India</a>, CC BY 4.0</p>
+  </section>
+  <section class="panel venues-panel">
+    <div class="p-head"><h2>Venues</h2><span class="muted small">sorted by risk</span></div>
+    <ul class="venues" id="venueList"></ul>
+  </section>
+</main>
+
+<!-- ============================ REPLAY ============================ -->
+<main class="view replay-view" id="view-replay" hidden>
+  <section class="panel replay-bar">
+    <select id="sessionSel" aria-label="Session"></select>
+    <button class="btn" id="refreshSessions">Refresh</button>
+    <button class="btn primary" id="playBtn">▶ Play</button>
+    <div class="seg-ctl" role="group" aria-label="Speed">
+      <button class="btn small" data-speed="1">1×</button>
+      <button class="btn small on" data-speed="5">5×</button>
+      <button class="btn small" data-speed="20">20×</button>
+    </div>
+    <span class="r-time" id="rTime">—</span>
+  </section>
+  <section class="panel timeline-panel">
+    <svg id="timeline" class="timeline" role="img" aria-label="Session timeline: click to jump"></svg>
+    <div class="t-legend small muted">
+      <span><i class="sw red"></i>critical</span><span><i class="sw amber"></i>building</span>
+      <span><i class="mk resp"></i>steward responded</span><span><i class="mk act"></i>operator action</span>
+      <span>Click or drag to jump</span>
+    </div>
+  </section>
+  <section class="panel map-panel">
+    <div class="p-head"><h2>What the control room saw</h2><span class="muted" id="rClock"></span></div>
+    <svg id="rmap" class="venue-map" role="img" aria-label="Venue map at the selected time"></svg>
+  </section>
+  <section class="panel detail-panel">
+    <div class="p-head"><h2 id="rDetailTitle">Segment</h2></div>
+    <div class="chart-wrap">
+      <svg id="rchart" class="chart" role="img" aria-label="Force at the selected time"></svg>
+      <div class="tooltip" id="rtip" hidden></div>
+    </div>
+  </section>
+  <section class="panel log-panel">
+    <div class="p-head"><h2>Incident log</h2><span class="muted small">up to the playhead</span></div>
+    <ul class="log" id="rLog"></ul>
+  </section>
+</main>
+
 <footer class="foot">
-  <span>Open API: <a href="/docs" target="_blank">/docs</a> · <a href="/api/state" target="_blank">/api/state</a></span>
-  <span class="muted">Session data is logged to server/logs for post-event review.</span>
+  <span>Open API: <a href="/docs" target="_blank">/docs</a></span>
+  <span class="muted">Every session is logged for replay and post-event review.</span>
 </footer>
 
+<script src="/static/india-map.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>
