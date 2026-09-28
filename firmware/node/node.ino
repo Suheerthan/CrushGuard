@@ -43,7 +43,9 @@ float   amberN = 250, redN = 450;   // demo defaults; set from the barricade's r
 
 // ---------- state ----------
 CrushMetrics metrics;
-bool loadcellOk = false, imuOk = false;
+CollapseDetector collapse;
+bool loadcellOk = false, imuOk = false, collapsed = false;
+float tiltDeg = 0;
 uint8_t level = CG_GREEN, localLvl = CG_GREEN;
 uint8_t overrideLevel = 0; uint32_t overrideUntil = 0;
 uint32_t identifyUntil = 0;
@@ -105,16 +107,30 @@ bool mpuReadAccel(float &ax, float &ay, float &az) {
 
 // Horizontal sway: remove the slow part (gravity + mounting tilt) with an EMA,
 // then RMS of the rest over ~1 s.
+// Tilt: angle between the gravity direction now (0.1 s average) and the mounting
+// position (20 s average). A barricade that is pushed over shows a big tilt.
 void updateSway() {
   static float bx = 0, by = 0, ms = 0; static bool init = false;
+  static float g0x, g0y, g0z, g1x, g1y, g1z;
   float ax, ay, az;
   if (!mpuReadAccel(ax, ay, az)) { imuOk = false; return; }
   imuOk = true;
-  if (!init) { bx = ax; by = ay; init = true; }
+  if (!init) { bx = ax; by = ay; g0x = g1x = ax; g0y = g1y = ay; g0z = g1z = az; init = true; }
   bx += 0.02f * (ax - bx); by += 0.02f * (ay - by);
   float hx = ax - bx, hy = ay - by;
   ms += 0.01f * ((hx * hx + hy * hy) - ms);   // ~1 s at 100 Hz
   swayRms = sqrtf(ms);
+
+  g1x += 0.1f * (ax - g1x); g1y += 0.1f * (ay - g1y); g1z += 0.1f * (az - g1z);
+  if (!collapsed) {                            // freeze the reference while collapsed
+    g0x += 0.0005f * (ax - g0x); g0y += 0.0005f * (ay - g0y); g0z += 0.0005f * (az - g0z);
+  }
+  float n0 = sqrtf(g0x * g0x + g0y * g0y + g0z * g0z), n1 = sqrtf(g1x * g1x + g1y * g1y + g1z * g1z);
+  if (n0 > 1 && n1 > 1) {
+    float c = (g0x * g1x + g0y * g1y + g0z * g1z) / (n0 * n1);
+    c = c > 1 ? 1 : (c < -1 ? -1 : c);
+    tiltDeg = acosf(c) * 57.2958f;
+  }
 }
 
 // ================= ESP-NOW =================
@@ -172,7 +188,8 @@ void sendTelemetry() {
   p.sway_ms2 = swayRms;
   p.level = level;
   p.flags = (loadcellOk ? CGF_LOADCELL_OK : 0) | (imuOk ? CGF_IMU_OK : 0) |
-            (millis() < overrideUntil ? CGF_OVERRIDE : 0);
+            (millis() < overrideUntil ? CGF_OVERRIDE : 0) | (collapsed ? CGF_COLLAPSE : 0);
+  p.tilt_ddeg = (uint16_t)(tiltDeg * 10);
   esp_now_send(BROADCAST, (uint8_t *)&p, sizeof(p));
 }
 
@@ -182,6 +199,9 @@ void driveBeacon() {
   bool g = false, a = false, r = false, bz = false;
   if (t < identifyUntil) {                       // "where is node 4?" blink all
     bool on = (t / 150) % 2; g = a = r = on;
+  } else if (collapsed) {                        // barricade down: red + amber flash, siren
+    r = (t / 80) % 2; a = !r;
+    bz = (t % 600) < 450;
   } else if (level == CG_GREEN) {
     g = true;
   } else if (level == CG_AMBER) {
@@ -231,8 +251,8 @@ void handleSerial() {
     } else if (line == "info") {
       Serial.printf("id=%u tare=%ld scale=%.8f amber=%.0f red=%.0f loadcell=%d imu=%d\n",
                     nodeId, tareRaw, scaleNPerCount, amberN, redN, loadcellOk, imuOk);
-      Serial.printf("force=%.1f N rate=%.1f N/s turb=%.1f N sway=%.2f m/s2 level=%u\n",
-                    metrics.force(), metrics.rate(), metrics.turbulence(), swayRms, level);
+      Serial.printf("force=%.1f N rate=%.1f N/s turb=%.1f N sway=%.2f m/s2 tilt=%.1f deg level=%u collapsed=%d\n",
+                    metrics.force(), metrics.rate(), metrics.turbulence(), swayRms, tiltDeg, level, collapsed);
     }
     line = "";
   }
@@ -287,6 +307,8 @@ void loop() {
 
   localLvl = localLevel(localLvl, metrics.force(), metrics.rate(), metrics.turbulence(),
                         amberN, redN);
+  collapsed = imuOk && collapse.update(now, metrics.force(), metrics.peak(2000), tiltDeg, amberN);
+  if (collapsed) localLvl = CG_RED;
   // Final level = worst of (own judgement, server override). If the server goes
   // silent the override expires and the node keeps protecting its own segment.
   level = localLvl;
