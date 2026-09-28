@@ -169,7 +169,10 @@ function stopAlarm() { clearInterval(alarmTimer); alarmTimer = null; if (navigat
 // ---------- live ----------
 function myAlert() {
   if (!state || !me) return null;
-  return state.alerts.find((a) => a.active && a.segment && me.segments.includes(a.segment) && a.severity !== "info") || null;
+  const mine = state.alerts.filter((a) => a.active && a.segment && me.segments.includes(a.segment) && a.severity !== "info");
+  const rank = (a) => (a.key && a.key.startsWith("collapse:") ? 0 : a.severity === "critical" ? 1 : 2);
+  mine.sort((a, b) => rank(a) - rank(b) || b.started - a.started);
+  return mine[0] || null;
 }
 function render() {
   if (!state || !me || $("duty").hidden) return;
@@ -177,12 +180,14 @@ function render() {
   const rank = { off: -1, green: 0, amber: 1, red: 2 };
   let worst = null;
   for (const s of mine) { const lv = s.online ? s.level : "off"; if (!worst || rank[lv] > rank[worst.lv]) worst = { lv, s }; }
+  const down = mine.find((s) => s.collapsed);
+  if (down) worst = { lv: "red", s: down };
   const lv = worst ? worst.lv : "green";
   const box = $("status"); box.dataset.level = lv;
-  $("sBig").textContent = lv === "red" ? "DANGER" : lv === "amber" ? "PRESSURE RISING" : lv === "off" ? "SENSOR OFFLINE" : "ALL CLEAR";
+  $("sBig").textContent = down ? "BARRICADE DOWN" : lv === "red" ? "DANGER" : lv === "amber" ? "PRESSURE RISING" : lv === "off" ? "SENSOR OFFLINE" : "ALL CLEAR";
   $("sWhat").textContent = lv === "green" ? "Your zone is normal" : lv === "off" ? `${worst.s.id}: check the sensor node` :
     `${worst.s.id} · ${worst.s.label} · ${Math.round(worst.s.f)} N` + (worst.s.eta_s ? ` · critical in ~${Math.round(worst.s.eta_s)} s` : "");
-  $("sTodo").textContent = TODO[lv] || "";
+  $("sTodo").textContent = down ? "Stop people moving forward. Help anyone who has fallen and call the medical team. Keep the crowd back from the gap." : (TODO[lv] || "");
   const red = state.thresholds.red_n;
   const rows = mine.map((s) => {
     const l = s.online ? s.level : "off";

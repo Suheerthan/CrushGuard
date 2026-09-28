@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CrushGuard Incident Report</title>
+<style>
+  :root { --ink:#111418; --ink-2:#4a5360; --muted:#7a8390; --line:#dfe3e8; --bg:#ffffff; --soft:#f4f6f8;
+    --good:#0a7d0a; --warning:#b77900; --critical:#c02f2f; --series:#2a78d6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #e9ecef; color: var(--ink); font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif; }
+  .page { max-width: 900px; margin: 24px auto; background: var(--bg); padding: 36px 40px; box-shadow: 0 2px 14px rgba(0,0,0,.08); }
+  .bar { max-width: 900px; margin: 16px auto 0; display: flex; gap: 8px; justify-content: flex-end; }
+  .bar button { font: inherit; font-weight: 700; padding: 8px 14px; border-radius: 8px; border: 1px solid #1f6fd1; background: #2a78d6; color: #fff; cursor: pointer; }
+  .bar button.ghost { background: #fff; color: #1f6fd1; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid var(--ink); padding-bottom: 12px; margin-bottom: 18px; gap: 16px; }
+  .brand { font-weight: 900; letter-spacing: .18em; font-size: 13px; color: var(--ink-2); }
+  h1 { font-size: 24px; margin: 4px 0 2px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin: 24px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  .meta { text-align: right; color: var(--ink-2); font-size: 12px; }
+  .summary { font-size: 14px; background: var(--soft); border-left: 4px solid var(--ink); padding: 12px 14px; border-radius: 4px; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .kpi { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+  .kv { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .kl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sev { font-weight: 700; }
+  .critical { color: var(--critical); } .warning { color: var(--warning); } .ok { color: var(--good); }
+  svg text { font-family: inherit; font-size: 10px; fill: var(--ink-2); }
+  .note { color: var(--muted); font-size: 11px; margin-top: 18px; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 28px; }
+  .sign div { border-top: 1px solid var(--ink); padding-top: 4px; color: var(--ink-2); font-size: 11px; }
+  .err { color: var(--critical); font-weight: 700; }
+  @media print {
+    html, body { background: #fff; }
+    .bar { display: none; }
+    .page { box-shadow: none; margin: 0; max-width: none; padding: 0; }
+    h2 { break-after: avoid; }
+    tr, .kpi, svg { break-inside: avoid; }
+  }
+  @page { size: A4; margin: 14mm; }
+  @media (max-width: 640px) { .page { padding: 20px 16px; margin: 0; } .kpis { grid-template-columns: 1fr 1fr; } header { flex-direction: column; } .meta { text-align: left; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button class="ghost" onclick="window.close()">Close</button>
+  <button onclick="window.print()">Save as PDF / Print</button>
+</div>
+<div class="page" id="page"><p>Loading report…</p></div>
+
+<script>
+"use strict";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const t2 = (t) => new Date(t * 1000).toLocaleTimeString([], { hour12: false });
+const d2 = (t) => new Date(t * 1000).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+const dur = (s) => s == null ? "—" : (Math.abs(s) < 60 ? `${Math.round(Math.abs(s))} s` : `${Math.floor(Math.abs(s) / 60)} min ${Math.round(Math.abs(s) % 60)} s`) + (s < 0 ? " before" : "");
+const LV = ["normal", "building", "critical"];
+
+function eventText(e) {
+  switch (e.kind) {
+    case "respond": return [`Steward ${e.steward} responding at ${e.segment}`, "ok"];
+    case "help": return [`Steward ${e.steward} requested backup at ${e.segment}`, "critical"];
+    case "checkin": return [`Steward ${e.steward} on duty (${(e.segments || []).join(", ")})`, ""];
+    case "ack": return [`Control room acknowledged alert #${e.alert}`, ""];
+    case "pa": return [`PA announcement played (${e.lang})`, "ok"];
+    case "restore": return [`Barricade ${e.segment} put back up`, "ok"];
+    case "action":
+    case "sim":
+      if (e.action === "entry") return [e.on ? "Entry resumed" : "Entry STOPPED", e.on ? "" : "ok"];
+      if (e.action === "gate") return [`Relief gate ${e.value} ${e.on ? "opened" : "closed"}`, e.on ? "ok" : ""];
+      if (e.action === "note") return [`Note: ${e.value}`, ""];
+      if (e.kind === "sim") return [`[simulator] ${e.action}${e.value ? " " + e.value : ""}`, ""];
+      return [e.action, ""];
+    default: return [e.kind, ""];
+  }
+}
+
+function chart(tl) {
+  const W = 820, H = 200, m = { l: 44, r: 10, t: 10, b: 36 };
+  const fr = tl.frames, th = tl.thresholds;
+  const maxF = Math.max(th.red_n * 1.2, ...fr.map((f) => Math.max(...f.s.map((s) => s[0])) * 1.08));
+  const x = (t) => m.l + ((t - tl.start) / Math.max(1, tl.end - tl.start)) * (W - m.l - m.r);
+  const y = (v) => H - m.b - (v / maxF) * (H - m.t - m.b);
+  let g = "";
+  for (let v = 0; v <= maxF; v += maxF > 900 ? 200 : 100) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="#eceff2"/><text x="${m.l - 6}" y="${y(v) + 3}" text-anchor="end">${v}</text>`;
+  const bw = Math.max(1, (W - m.l - m.r) / fr.length);
+  for (const f of fr) if (f.o) g += `<rect x="${x(f.t)}" y="${H - m.b + 6}" width="${bw + .5}" height="8" fill="${f.o === 2 ? "#c02f2f" : "#e0a100"}"/>`;
+  g += `<text x="${m.l}" y="${H - 4}">${t2(tl.start)}</text><text x="${W - m.r}" y="${H - 4}" text-anchor="end">${t2(tl.end)}</text>`;
+  g += `<text x="${(m.l + W) / 2}" y="${H - 4}" text-anchor="middle">bar: amber = building, red = critical</text>`;
+  for (const [v, c, n] of [[th.amber_n, "#b77900", "building"], [th.red_n, "#c02f2f", "critical"]])
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${c}" stroke-dasharray="5 4"/><text x="${m.l + 4}" y="${y(v) - 3}" fill="${c}">${n} ${v} N</text>`;
+  const d = fr.map((f, i) => `${i ? "L" : "M"}${x(f.t).toFixed(1)},${y(Math.max(...f.s.map((s) => s[0]))).toFixed(1)}`).join("");
+  g += `<path d="${d}" fill="none" stroke="#2a78d6" stroke-width="1.8"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Highest barricade force across all segments over the session">${g}</svg>`;
+}
+
+function summaryText(tl, S, venueName) {
+  const n = S.incidents.length, mins = Math.round(tl.duration_s / 60);
+  if (!n) return `During this ${mins ? mins + "-minute" : "short"} session at ${esc(venueName)}, no barricade reached the critical level. ` +
+    `The highest push measured was ${Math.round(S.peak_force_n)} N. ${S.alerts.warning ? S.alerts.warning + " early-warning alerts were raised." : ""}`;
+  const i = S.incidents[0];
+  const what = i.collapse ? "a barricade collapse" : i.wave ? "a crowd surge wave" : "a crush-risk build-up";
+  let txt = `During this ${mins}-minute session at ${esc(venueName)}, ${n} critical incident${n > 1 ? "s" : ""} occurred. ` +
+    `The first, ${what} at ${esc(i.segments.join(", "))}, began at ${t2(i.start)}; pressure reached ${Math.round(i.peak_force_n)} N. `;
+  txt += i.warning_lead_s > 0 ? `CrushGuard warned ${dur(i.warning_lead_s)} before it became critical. ` : "It became critical without an earlier warning stage. ";
+  if (i.steward) txt += `Steward ${esc(i.steward)} responded ${i.steward_delay_s < 0 ? dur(i.steward_delay_s) + " it turned critical" : dur(i.steward_delay_s) + " after"}. `;
+  if (i.first_action) txt += `First control-room action (${esc(i.first_action)}) came ${dur(i.action_delay_s)} after the critical alert. `;
+  txt += `The crowd was back below critical after ${dur(i.duration_s)}.`;
+  return txt;
+}
+
+async function main() {
+  const name = new URLSearchParams(location.search).get("session");
+  const page = document.getElementById("page");
+  if (!name) { page.innerHTML = '<p class="err">No session given.</p>'; return; }
+  const [tl, v] = await Promise.all([
+    fetch("/api/replay/" + encodeURIComponent(name)).then((r) => r.ok ? r.json() : Promise.reject(r.status)),
+    fetch("/api/venue").then((r) => r.json()),
+  ]).catch((e) => { page.innerHTML = `<p class="err">Could not load session (${esc(e)}).</p>`; return []; });
+  if (!tl) return;
+  const S = tl.stats, venueName = v.venue.name;
+  document.title = `CrushGuard report – ${venueName} – ${d2(tl.start)}`;
+  const i = S.incidents[0];
+  const kpis = [
+    ["Critical incidents", S.incidents.length], ["Time at critical", dur(S.time_red_s)], ["Peak push", `${Math.round(S.peak_force_n)} N`],
+    ["Warning before critical", i ? dur(i.warning_lead_s) : "—"], ["Steward response", i && i.steward ? dur(i.steward_delay_s) : "—"],
+    ["First action after critical", i && i.first_action ? dur(i.action_delay_s) : "—"],
+  ];
+  const items = [];
+  for (const a of tl.alerts) items.push([a.started, a.title, a.peak_severity, a.responder ? `${a.responder} responding` : ""]);
+  for (const e of tl.events) { const [txt, cls] = eventText(e); items.push([e.t, txt, cls, ""]); }
+  items.sort((a, b) => a[0] - b[0]);
+  page.innerHTML = `
+    <header>
+      <div><div class="brand">CRUSHGUARD</div><h1>Incident report</h1><div>${esc(venueName)}</div></div>
+      <div class="meta">${d2(tl.start)}<br>${t2(tl.start)} – ${t2(tl.end)} (${dur(tl.duration_s)})<br>Session ${esc(tl.name)}<br>Generated ${new Date().toLocaleString()}</div>
+    </header>
+    <div class="summary">${summaryText(tl, S, venueName)}</div>
+    <div class="kpis">${kpis.map(([l, val]) => `<div class="kpi"><div class="kv">${esc(val)}</div><div class="kl">${esc(l)}</div></div>`).join("")}</div>
+
+    <h2>Pressure over the session</h2>
+    ${chart(tl)}
+
+    <h2>Critical incidents</h2>
+    ${S.incidents.length ? `<table><thead><tr><th>Start</th><th>Type</th><th>Segments</th><th class="num">Peak N</th><th class="num">Warning</th><th>Steward</th><th>First action</th><th class="num">Duration</th></tr></thead><tbody>
+      ${S.incidents.map((x) => `<tr><td>${t2(x.start)}</td><td class="sev critical">${x.collapse ? "Barricade collapse" : x.wave ? "Crowd wave" : "Pressure build-up"}${x.heat ? " + heat" : ""}</td>
+        <td>${esc(x.segments.join(", "))}</td><td class="num">${Math.round(x.peak_force_n)}</td><td class="num">${dur(x.warning_lead_s)}</td>
+        <td>${x.steward ? esc(x.steward) + " · " + dur(x.steward_delay_s) : "—"}</td><td>${x.first_action ? esc(x.first_action) + " · " + dur(x.action_delay_s) : "—"}</td><td class="num">${dur(x.duration_s)}</td></tr>`).join("")}
+      </tbody></table>` : '<p class="ok">No critical incident in this session.</p>'}
+
+    <h2>Barricade segments</h2>
+    <table><thead><tr><th>Segment</th><th>Location</th><th class="num">Peak push N</th><th class="num">Peak risk</th><th class="num">Time building</th><th class="num">Time critical</th></tr></thead><tbody>
+      ${S.segments.map((x) => `<tr><td>${x.id}</td><td>${esc(x.label)}</td><td class="num">${Math.round(x.peak_force_n)}</td><td class="num">${Math.round(x.max_score)}</td><td class="num">${dur(x.amber_s)}</td><td class="num ${x.red_s ? "critical" : ""}">${dur(x.red_s)}</td></tr>`).join("")}
+    </tbody></table>
+
+    <h2>Timeline of alerts and actions</h2>
+    <table><thead><tr><th style="width:70px">Time</th><th>What happened</th><th>Note</th></tr></thead><tbody>
+      ${items.map(([t, txt, cls, note]) => `<tr><td>${t2(t)}</td><td class="${cls === "critical" ? "sev critical" : cls === "warning" ? "sev warning" : cls}">${esc(txt)}</td><td>${esc(note)}</td></tr>`).join("") || '<tr><td colspan="3">Nothing logged.</td></tr>'}
+    </tbody></table>
+
+    <p class="note">Method: forces are measured by clamp-on load cells on the barricades and processed by the CrushGuard risk engine (force, rate of rise, surging, crowd-wave, collapse and heat factors). The report is rebuilt from the session log, so it shows exactly what the control room saw.
+    Thresholds in this session: building ${tl.thresholds.amber_n} N, critical ${tl.thresholds.red_n} N${tl.thresholds.red_n <= 500 ? " (demonstration values, not field safety limits)" : ""}.
+    ${tl.events.some((e) => e.kind === "sim") ? "This session used the CrushGuard simulator." : ""}</p>
+    <div class="sign"><div>Prepared by (control room)</div><div>Reviewed by (police / event safety officer)</div></div>`;
+}
+main();
+</script>
+</body>
+</html>
