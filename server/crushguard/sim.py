@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import random
 
-from .metrics import CrushMetrics, local_level
+from .metrics import CollapseDetector, CrushMetrics, local_level
 
 SCENARIOS = ("calm", "buildup", "surge")
 
@@ -48,6 +48,13 @@ class CrowdSimulator:
         self._next_sample = 0.0
         self._next_tx = 0.0
         self.true_force = {i: 0.0 for i in self.ids}
+        # barricade collapse + tilt
+        self.collapses: dict[str, float] = {}           # segment -> start time
+        self.detectors = {i: CollapseDetector() for i in self.ids}
+        self.tilt = {i: 1.0 for i in self.ids}
+        # venue weather (the gateway's DHT22 in real life)
+        self.temp_c, self.rh = 31.0, 60.0
+        self._next_env = 0.0
 
     # ---------------- controls (called from the dashboard) ----------------
     def set_scenario(self, name: str) -> None:
@@ -60,10 +67,22 @@ class CrowdSimulator:
             self.wave_amp = 0.0
             self.gates_open.clear()
             self.entry_open = True
+            self.collapses.clear()                        # barricades put back up
+            for d in self.detectors.values():
+                d.clear()
 
     def push(self, seg_id: str) -> None:
         if seg_id in self.ids:
             self.pushes.append((seg_id, self.t or 0.0))
+
+    def collapse(self, seg_id: str) -> None:
+        """Crowd surges into a barricade until it gives way (force vanishes, it tilts over)."""
+        if seg_id in self.ids:
+            self.collapses[seg_id] = self.t or 0.0
+
+    def set_env(self, temp_c: float, rh: float) -> None:
+        self.temp_c = max(-10.0, min(55.0, float(temp_c)))
+        self.rh = max(1.0, min(100.0, float(rh)))
 
     def set_gate(self, gate_id: str, is_open: bool) -> None:
         (self.gates_open.add if is_open else self.gates_open.discard)(gate_id)
@@ -76,7 +95,8 @@ class CrowdSimulator:
 
     def status(self) -> dict:
         return {"scenario": self.scenario, "entry_open": self.entry_open,
-                "gates_open": sorted(self.gates_open), "offline": sorted(self.offline)}
+                "gates_open": sorted(self.gates_open), "offline": sorted(self.offline),
+                "collapsed": sorted(self.collapses), "temp_c": self.temp_c, "rh": self.rh}
 
     # ---------------- crowd physics (very simplified) ----------------
     def _relieved(self, seg_id: str) -> bool:
@@ -125,6 +145,15 @@ class CrowdSimulator:
                     f += 380.0 * dtp
                 elif 1.0 <= dtp < 6.0:
                     f += 380.0 * math.exp(-(dtp - 1.0) / 1.5)
+        if sid in self.collapses:
+            dtc = t - self.collapses[sid]
+            if dtc < 1.5:                                  # surge builds against the barricade
+                f += 300.0 * dtc
+            else:                                          # it gives way: nothing left to push on
+                self.tilt[sid] = 35.0 + self.rng.gauss(0, 0.8)
+                return max(0.0, 3.0 + self.rng.gauss(0, 1.5))
+        else:
+            self.tilt[sid] = 1.0 + abs(self.rng.gauss(0, 0.3))
         return max(0.0, f + self.rng.gauss(0, 4.0))
 
     # ---------------- main step ----------------
@@ -149,6 +178,10 @@ class CrowdSimulator:
             if ts >= self._next_tx:
                 self._next_tx += 1.0 / self.TX_HZ
                 out.extend(self._telemetry(ts))
+            if ts >= self._next_env:
+                self._next_env = ts + 5.0
+                out.append({"type": "env", "temp": round(self.temp_c + self.rng.gauss(0, 0.1), 1),
+                            "rh": round(self.rh + self.rng.gauss(0, 0.3), 1)})
             self._next_sample += dt_s
         self.pushes = [(s, t0) for s, t0 in self.pushes if now - t0 < 8]
         self.t = now
@@ -163,6 +196,10 @@ class CrowdSimulator:
             m = self.metrics[sid]
             f, r, tb = m.force(), m.rate(), m.turbulence()
             self.levels[sid] = local_level(self.levels[sid], f, r, tb, self.amber, self.red)
+            ms = int(ts * 1000)
+            down = self.detectors[sid].update(ms, f, m.peak(2000), self.tilt[sid], self.amber)
+            if down:
+                self.levels[sid] = 2
             self.seq[sid] = (self.seq[sid] + 1) % 65536
             self.bat[sid] = max(3300, self.bat[sid] - (1 if self.rng.random() < 0.02 else 0))
             msgs.append({
@@ -170,7 +207,8 @@ class CrowdSimulator:
                 "f": round(f, 1), "rate": round(r, 1), "peak": round(m.peak(), 1),
                 "turb": round(tb, 1),
                 "sway": round(0.02 + tb / 400 + self.rng.random() * 0.01, 3),
-                "lvl": self.levels[sid], "flags": 2 if sid in self.faulty else 3,
+                "lvl": self.levels[sid], "flags": (2 if sid in self.faulty else 3) | (8 if down else 0),
                 "bat": self.bat[sid], "rssi": -48 - 4 * k + self.rng.randint(-3, 3),
+                "tilt": round(self.tilt[sid], 1),
             })
         return msgs
