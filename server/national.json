@@ -1,0 +1,13 @@
+{
+  "note": "Demo network for the National view. Only the main venue is real (simulator or live sensors); the others are simulated so judges can see how many venues one state or national control room could watch.",
+  "main": {"id": "main", "name": "Demo rally ground", "city": "Chennai", "state": "Tamil Nadu", "type": "Political rally", "lat": 13.08, "lon": 80.27, "label": "right"},
+  "virtual": [
+    {"id": "nashik", "name": "Ramkund Ghat (Kumbh prep)", "city": "Nashik", "state": "Maharashtra", "type": "Religious gathering", "lat": 20.00, "lon": 73.79},
+    {"id": "ndls", "name": "Railway station footbridge", "city": "New Delhi", "state": "Delhi", "type": "Railway station", "lat": 28.64, "lon": 77.22},
+    {"id": "tirupati", "name": "Temple queue complex", "city": "Tirupati", "state": "Andhra Pradesh", "type": "Temple queue", "lat": 13.63, "lon": 79.42, "label": "above"},
+    {"id": "puri", "name": "Rath Yatra route", "city": "Puri", "state": "Odisha", "type": "Festival procession", "lat": 19.81, "lon": 85.83},
+    {"id": "blr", "name": "Stadium entry gates", "city": "Bengaluru", "state": "Karnataka", "type": "Stadium", "lat": 12.98, "lon": 77.60, "label": "left"},
+    {"id": "kol", "name": "Durga Puja pandal lanes", "city": "Kolkata", "state": "West Bengal", "type": "Festival", "lat": 22.57, "lon": 88.36},
+    {"id": "prayag", "name": "Sangam bathing ghats", "city": "Prayagraj", "state": "Uttar Pradesh", "type": "Religious gathering", "lat": 25.43, "lon": 81.88}
+  ]
+}

@@ -11,11 +11,26 @@ Across segments:
 from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
+import math
 import time
 
 from .metrics import GREEN, AMBER, RED, effective_load
 
 LEVEL_NAME = {GREEN: "green", AMBER: "amber", RED: "red"}
+FORECAST_TAU_S = 15.0          # a rise cannot continue forever: extrapolation is damped
+FORECAST_STEPS = (0, 5, 10, 15, 20, 25, 30)
+
+
+def forecast(force: float, rate: float, tau: float = FORECAST_TAU_S) -> list[list[float]]:
+    """Where the push force is heading over the next 30 s.
+
+    f(t) = f0 + rate * tau * (1 - exp(-t / tau)): follows the current slope at first,
+    then levels off. Same formula is used by the dashboard and the replay.
+    """
+    return [[t, round(max(0.0, force + rate * tau * (1 - math.exp(-t / tau))), 1)]
+            for t in FORECAST_STEPS]
+
+
 HISTORY_S = 120
 _RANK = {"": 0, "info": 1, "warning": 2, "critical": 3}
 
@@ -59,6 +74,7 @@ class Segment:
             "loadcell_ok": bool(self.flags & 1), "imu_ok": bool(self.flags & 2),
             "age_s": None if not self.last_seen else round(now - self.last_seen, 1),
             "reasons": self.reasons,
+            "forecast": forecast(self.f, self.rate) if online else [],
         }
 
 
@@ -75,11 +91,13 @@ class Alert:
     active: bool = True
     acked: bool = False
     peak_severity: str = ""
+    responder: str | None = None       # steward who pressed "I'm on it"
+    responded_at: float | None = None
 
     def to_dict(self):
         return {k: getattr(self, k) for k in
                 ("id", "key", "severity", "peak_severity", "segment", "title", "action",
-                 "started", "updated", "active", "acked")}
+                 "started", "updated", "active", "acked", "responder", "responded_at")}
 
 
 class RiskEngine:
@@ -98,6 +116,7 @@ class RiskEngine:
         self.alerts: list[Alert] = []
         self._next_alert = 1
         self.wave_segments: list[str] = []
+        self._manual: dict[str, float] = {}   # alert key -> expiry (help requests)
         self.started = time.time()
 
     # ---------------- input ----------------
@@ -244,6 +263,11 @@ class RiskEngine:
             self._raise(k, "critical", None,
                         f"Crowd wave detected across {', '.join(self.wave_segments)}",
                         "Stop all entry, open relief gates on both sides, PA in all languages", now)
+        for k, until in list(self._manual.items()):
+            if now < until:
+                live.add(k)
+            else:
+                del self._manual[k]
         for a in self.alerts:
             if a.active and a.key not in live:
                 a.active = False
@@ -259,6 +283,24 @@ class RiskEngine:
                 a.acked = True
                 return True
         return False
+
+    def respond(self, alert_id: int, name: str, now: float | None = None) -> Alert | None:
+        for a in self.alerts:
+            if a.id == alert_id:
+                a.responder, a.responded_at = name, now or time.time()
+                return a
+        return None
+
+    def request_help(self, seg_id: str, name: str, now: float | None = None) -> Alert:
+        """A steward on the ground asks for backup: always a critical alert."""
+        now = now or time.time()
+        seg = next((s for s in self.segments if s.id == seg_id), None)
+        label = seg.label if seg else seg_id
+        key = f"help:{seg_id}:{name}"
+        self._raise(key, "critical", seg_id, f"Steward {name} requests backup at {label}",
+                    f"Send more stewards to {seg_id}", now)
+        self._manual[key] = now + 60          # stays active for 60 s
+        return next(a for a in self.alerts if a.key == key and a.active)
 
     # ---------------- output ----------------
     def overall(self) -> str:
