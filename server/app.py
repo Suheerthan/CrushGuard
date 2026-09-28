@@ -12,6 +12,7 @@ import asyncio
 import csv
 import json
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -210,7 +211,26 @@ def main():
                     None if a.no_log else ROOT / "logs")
     print(f"CrushGuard: {'simulation' if a.sim or not a.serial else 'live on ' + a.serial} "
           f"-> http://localhost:{a.port}")
-    uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
+    print("Press Ctrl+C in this terminal to stop.")
+
+    class Server(uvicorn.Server):
+        # On Windows, Ctrl+C can hang while the dashboard's live connection is open.
+        # Ask uvicorn to stop, and force-exit if it has not finished within 3 s.
+        def handle_exit(self, sig, frame):
+            if not self.should_exit:
+                print("\nStopping CrushGuard...")
+                t = threading.Timer(3.0, lambda: os._exit(0))
+                t.daemon = True
+                t.start()
+            super().handle_exit(sig, frame)
+
+    server = Server(uvicorn.Config(app, host=a.host, port=a.port, log_level="warning",
+                                   timeout_graceful_shutdown=2))
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass
+    print("CrushGuard stopped.")
 
 
 if __name__ == "__main__":
