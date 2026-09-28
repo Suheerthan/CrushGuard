@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from crushguard.national import NationalNetwork
+from crushguard.planner import plan as capacity_plan
 from crushguard.replay import build_timeline, list_sessions
 from crushguard.risk import RiskEngine
 from crushguard.sim import CrowdSimulator, SCENARIOS
@@ -52,6 +53,12 @@ class Help(BaseModel):
     segment: str
 
 
+class Action(BaseModel):
+    action: str             # entry | gate | note
+    value: str | None = None
+    on: bool = True
+
+
 def lan_ip() -> str:
     """The laptop's address on the local Wi-Fi (what steward phones connect to)."""
     try:
@@ -76,6 +83,7 @@ class Runtime:
             from crushguard.serial_bridge import SerialBridge
             self.bridge = SerialBridge(serial_port)
         self.stewards = StewardRegistry()
+        self.ops = {"entry_open": True, "gates_open": []}   # live mode: operator action log state
         self.national = NationalNetwork(national_cfg, config) if national_cfg else None
         self.national_snap = None
         self.clients: set[WebSocket] = set()
@@ -89,7 +97,7 @@ class Runtime:
             self.log_file = open(log_dir / f"{self.session}.csv", "w", newline="")
             self.log_writer = csv.writer(self.log_file)
             self.log_writer.writerow(["time", "node", "force_n", "rate_nps", "peak_n",
-                                      "turb_n", "sway", "node_level", "flags", "bat_mv", "rssi"])
+                                      "turb_n", "sway", "node_level", "flags", "bat_mv", "rssi", "tilt"])
             self.event_file = open(log_dir / f"{self.session}.events.jsonl", "a", encoding="utf-8")
 
     @property
@@ -109,7 +117,9 @@ class Runtime:
             if self.log_writer and m.get("type") == "t":
                 self.log_writer.writerow([f"{now:.2f}", m["node"], m["f"], m["rate"], m["peak"],
                                           m["turb"], m.get("sway"), m.get("lvl"), m.get("flags"),
-                                          m.get("bat"), m.get("rssi")])
+                                          m.get("bat"), m.get("rssi"), m.get("tilt", "")])
+            elif m.get("type") == "env":
+                self.log_event("env", temp=m["temp"], rh=m["rh"])
         if self.national:
             self.national.step(now)
 
@@ -118,6 +128,8 @@ class Runtime:
         s = self.engine.snapshot(now)
         s["mode"] = self.mode
         s["sim"] = self.sim.status() if self.sim else None
+        s["ops"] = ({"entry_open": self.sim.entry_open, "gates_open": sorted(self.sim.gates_open)}
+                    if self.sim else self.ops)
         s["gateway_ok"] = True if self.sim else self.bridge.connected
         s["stewards"] = self.stewards.snapshot(now)
         for seg in s["segments"]:
@@ -238,6 +250,40 @@ def build_app(config_path: Path, serial_port: str | None, log_dir: Path | None,
             rt.bridge.tare(node)
         return {"ok": True, "mode": rt.mode}
 
+    @app.post("/api/action", summary="Log an operator action (live mode: stop entry, open gate, note)")
+    def action(body: Action):
+        if body.action == "entry":
+            rt.ops["entry_open"] = body.on
+            if rt.sim:
+                rt.sim.set_entry(body.on)
+        elif body.action == "gate":
+            g = set(rt.ops["gates_open"])
+            (g.add if body.on else g.discard)(body.value)
+            rt.ops["gates_open"] = sorted(g)
+            if rt.sim:
+                rt.sim.set_gate(body.value, body.on)
+        elif body.action != "note":
+            raise HTTPException(400, "action must be entry, gate or note")
+        rt.log_event("action", action=body.action, value=body.value, on=body.on)
+        return rt.state()["ops"]
+
+    @app.post("/api/segments/{seg_id}/restore", summary="Barricade put back up: clear the collapse alarm")
+    def restore(seg_id: str):
+        rt.engine.clear_collapse(seg_id)
+        if rt.sim and seg_id in rt.sim.collapses:
+            rt.sim.collapses.pop(seg_id, None)
+            rt.sim.detectors[seg_id].clear()
+        rt.log_event("restore", segment=seg_id)
+        return {"ok": True}
+
+    @app.post("/api/plan", summary="Pre-event capacity plan: density, egress time, entry queue, sensors")
+    def plan_api(body: dict):
+        return capacity_plan(body)
+
+    @app.get("/report", include_in_schema=False)
+    def report_page():
+        return FileResponse(ROOT / "static" / "report.html")
+
     # ---------- stewards (phones on the ground) ----------
     @app.get("/api/connect", summary="Address steward phones should open")
     def connect_info():
@@ -343,6 +389,19 @@ def build_app(config_path: Path, serial_port: str | None, log_dir: Path | None,
             rt.sim.set_entry(cmd.on)
         elif cmd.action == "offline":
             rt.sim.set_offline(cmd.value, cmd.on)
+        elif cmd.action == "collapse":
+            if cmd.on:
+                rt.sim.collapse(cmd.value)
+            else:                                   # barricade put back up
+                rt.sim.collapses.pop(cmd.value, None)
+                rt.sim.detectors[cmd.value].clear()
+                rt.engine.clear_collapse(cmd.value)
+        elif cmd.action == "env":
+            try:
+                t, h = (float(x) for x in (cmd.value or "").split(","))
+            except ValueError:
+                raise HTTPException(400, "value must be 'temperature,humidity'")
+            rt.sim.set_env(t, h)
         else:
             raise HTTPException(400, "unknown action")
         rt.log_event("sim", action=cmd.action, value=cmd.value, on=cmd.on)
