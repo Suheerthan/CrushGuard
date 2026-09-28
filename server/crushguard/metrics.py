@@ -83,3 +83,24 @@ def local_level(prev: int, force: float, rate: float, turb: float,
     if prev == AMBER:
         return AMBER if eff > amber * (1 - hyst) else GREEN
     return AMBER if eff >= amber else GREEN
+
+
+class CollapseDetector:
+    """Port of CollapseDetector in crush_metrics.h (push vanished + barricade tilted)."""
+
+    def __init__(self):
+        self.until = 0
+
+    def update(self, t_ms: int, force: float, recent_peak: float, tilt_deg: float, amber: float) -> bool:
+        loaded = recent_peak >= 0.6 * amber
+        dropped = force < 0.25 * recent_peak
+        tilted = tilt_deg >= 15.0
+        if loaded and dropped and tilted:
+            self.until = t_ms + 30000
+        return self.active(t_ms)
+
+    def active(self, t_ms: int) -> bool:
+        return self.until != 0 and self.until - t_ms > 0
+
+    def clear(self) -> None:
+        self.until = 0

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import math
 import time
 
+from .heat import category as heat_category, heat_index_c
 from .metrics import GREEN, AMBER, RED, effective_load
 
 LEVEL_NAME = {GREEN: "green", AMBER: "amber", RED: "red"}
@@ -32,6 +33,8 @@ def forecast(force: float, rate: float, tau: float = FORECAST_TAU_S) -> list[lis
 
 
 HISTORY_S = 120
+COLLAPSE_HOLD_S = 60.0         # a collapsed barricade stays critical this long after the last report
+ENV_FRESH_S = 60.0
 _RANK = {"": 0, "info": 1, "warning": 2, "critical": 3}
 
 
@@ -54,6 +57,8 @@ class Segment:
     score: float = 0.0
     eta_s: float | None = None
     level: int = GREEN
+    tilt: float = 0.0
+    collapsed_until: float = 0.0
     reasons: list = field(default_factory=list)
     history: deque = field(default_factory=lambda: deque(maxlen=HISTORY_S * 5))
 
@@ -74,6 +79,8 @@ class Segment:
             "loadcell_ok": bool(self.flags & 1), "imu_ok": bool(self.flags & 2),
             "age_s": None if not self.last_seen else round(now - self.last_seen, 1),
             "reasons": self.reasons,
+            "tilt": round(self.tilt, 1),
+            "collapsed": self.collapsed_until > now,
             "forecast": forecast(self.f, self.rate) if online else [],
         }
 
@@ -117,11 +124,18 @@ class RiskEngine:
         self._next_alert = 1
         self.wave_segments: list[str] = []
         self._manual: dict[str, float] = {}   # alert key -> expiry (help requests)
+        self.temp_c: float | None = None
+        self.rh: float | None = None
+        self.env_t = 0.0
         self.started = time.time()
 
     # ---------------- input ----------------
     def ingest(self, msg: dict, now: float | None = None) -> None:
-        """msg = one gateway JSON line (type 't')."""
+        """msg = one gateway JSON line (type 't' telemetry or 'env' weather)."""
+        if msg.get("type") == "env":
+            self.temp_c, self.rh = float(msg["temp"]), float(msg["rh"])
+            self.env_t = now or time.time()
+            return
         if msg.get("type") != "t":
             return
         seg = self.by_node.get(int(msg["node"]))
@@ -133,6 +147,9 @@ class RiskEngine:
         seg.sway = float(msg.get("sway", 0)); seg.node_level = int(msg.get("lvl", 0))
         seg.flags = int(msg.get("flags", 3)); seg.bat = int(msg.get("bat", 0))
         seg.rssi = int(msg.get("rssi", 0)); seg.last_seen = now
+        seg.tilt = float(msg.get("tilt", 0) or 0)
+        if seg.flags & 8:                       # node reports barricade collapse
+            seg.collapsed_until = now + COLLAPSE_HOLD_S
         seg.history.append((round(now, 2), round(seg.f, 1)))
 
     # ---------------- evaluation ----------------
@@ -148,9 +165,25 @@ class RiskEngine:
                 out.append(o)
         return out
 
+    def env(self, now: float | None = None) -> dict | None:
+        now = now or time.time()
+        if self.temp_c is None or now - self.env_t > ENV_FRESH_S:
+            return None
+        hi = heat_index_c(self.temp_c, self.rh)
+        name, mult = heat_category(hi)
+        return {"temp_c": round(self.temp_c, 1), "rh": round(self.rh, 1), "heat_index_c": round(hi, 1),
+                "category": name, "multiplier": mult}
+
+    def clear_collapse(self, seg_id: str) -> None:
+        for s in self.segments:
+            if s.id == seg_id:
+                s.collapsed_until = 0.0
+
     def evaluate(self, now: float | None = None) -> None:
         now = now or time.time()
         amber_score = 100 * self.amber / self.red
+        env = self.env(now)
+        mult = env["multiplier"] if env else 1.0
         for s in self.segments:
             online = s.last_seen > 0 and now - s.last_seen < self.offline_after
             s.reasons = []
@@ -158,7 +191,7 @@ class RiskEngine:
                 s.score, s.eta_s = 0.0, None
                 continue
             eff = effective_load(s.f, s.rate, s.turb)
-            s.score = max(0.0, 100 * eff / self.red)
+            s.score = max(0.0, 100 * eff * mult / self.red)
             if s.f >= self.red:
                 s.eta_s = 0.0
             elif s.rate > 2:
@@ -171,6 +204,8 @@ class RiskEngine:
                 s.reasons.append(f"rising {s.rate:.0f} N/s")
             if s.turb > 0.12 * self.red:
                 s.reasons.append("crowd surging")
+            if mult > 1 and s.score >= amber_score:
+                s.reasons.append(f"heat stress (feels like {env['heat_index_c']:.0f} °C)")
 
         # crowd wave: a connected run of >= 3 surging segments
         surging = {s.id for s in self.segments if s.turb > 0.12 * self.red and s.score > 25}
@@ -202,6 +237,9 @@ class RiskEngine:
             if s.id in wave:
                 new = max(new, RED)
                 s.reasons.append("crowd wave across zone")
+            if s.collapsed_until > now:
+                new = RED
+                s.reasons.insert(0, f"BARRICADE DOWN (tilted {s.tilt:.0f}°)")
             new = max(new, s.node_level)     # never show less than the node itself shows
             s.level = new
         self._update_alerts(now)
@@ -240,7 +278,12 @@ class RiskEngine:
                 continue
             if not online:
                 continue
-            if s.level == RED:
+            if s.collapsed_until > now:
+                k = f"collapse:{s.id}"; live.add(k)
+                self._raise(k, "critical", s.id, f"BARRICADE DOWN at {s.label}",
+                            f"Stop entry at E1, send stewards and the medical team to {s.id}, "
+                            f"{gate_txt}, PA: stop pushing", now)
+            elif s.level == RED:
                 k = f"level:{s.id}"; live.add(k)
                 why = ", ".join(s.reasons) or "high pressure"
                 self._raise(k, "critical", s.id, f"CRUSH RISK at {s.label} ({why})",
@@ -258,6 +301,15 @@ class RiskEngine:
                 k = f"bat:{s.id}"; live.add(k)
                 self._raise(k, "info", s.id, f"{s.id} battery low ({s.bat} mV)",
                             "Swap battery pack", now)
+        env = self.env(now)
+        if env and env["multiplier"] >= 1.2:
+            k = "heat"; live.add(k)
+            sev = "critical" if env["multiplier"] >= 1.3 else "warning"
+            self._raise(k, sev, None,
+                        f"Heat {env['category']}: feels like {env['heat_index_c']:.0f} °C "
+                        f"({env['temp_c']:.0f} °C, {env['rh']:.0f}% humidity)",
+                        "Open water points and shade, slow down entry, medical team on standby. "
+                        "Pressure limits lowered automatically.", now)
         if self.wave_segments:
             k = "wave"; live.add(k)
             self._raise(k, "critical", None,
@@ -329,6 +381,7 @@ class RiskEngine:
             "thresholds": {"amber_n": self.amber, "red_n": self.red},
             "segments": [s.to_dict(now, self.offline_after) for s in self.segments],
             "wave": self.wave_segments,
+            "env": self.env(now),
             "alerts": [a.to_dict() for a in reversed(self.alerts[-60:])],
         }
 
