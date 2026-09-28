@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CrushGuard Control Room</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 20V9m6 11V6m6 14V9m6 11V4M2 20h20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+    <span>CrushGuard</span>
+    <span class="venue" id="venueName">—</span>
+  </div>
+  <div class="top-right">
+    <span class="badge" id="modeBadge">connecting…</span>
+    <span class="badge" id="linkBadge">link</span>
+    <span class="clock" id="clock">--:--:--</span>
+  </div>
+</header>
+
+<section class="status-banner" id="banner" data-level="green">
+  <span class="status-icon" id="bannerIcon">✓</span>
+  <div>
+    <div class="status-title" id="bannerTitle">All barricades normal</div>
+    <div class="status-sub" id="bannerSub">Waiting for data</div>
+  </div>
+  <div class="banner-actions">
+    <select id="paLang" aria-label="Announcement language">
+      <option value="en">English</option><option value="hi">हिन्दी</option><option value="ta">தமிழ்</option>
+    </select>
+    <button id="paBtn" class="btn">Play PA announcement</button>
+    <label class="chk"><input type="checkbox" id="autoPa"> Auto PA on critical</label>
+  </div>
+</section>
+
+<main class="grid">
+  <section class="card map-card">
+    <div class="card-head">
+      <h2>Venue: barricade pressure</h2>
+      <div class="legend">
+        <span><i class="sw green"></i>Normal</span>
+        <span><i class="sw amber"></i>Building</span>
+        <span><i class="sw red"></i>Critical</span>
+        <span><i class="sw off"></i>Offline</span>
+      </div>
+    </div>
+    <svg id="map" role="img" aria-label="Venue map with barricade segments"></svg>
+    <p class="hint" id="mapHint">Click a barricade segment to see its details.</p>
+  </section>
+
+  <section class="card alerts-card">
+    <div class="card-head"><h2>Alerts</h2><span class="muted" id="alertCount">0 active</span></div>
+    <ul id="alerts" class="alerts"></ul>
+  </section>
+
+  <section class="card detail-card">
+    <div class="card-head">
+      <h2 id="detailTitle">Segment —</h2>
+      <div class="detail-actions">
+        <button class="btn small" id="pushBtn" hidden>Simulate push here</button>
+        <button class="btn small ghost" id="identifyBtn">Blink beacon</button>
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="tile-label">Push force</div><div class="tile-val" id="tForce">—</div></div>
+      <div class="tile"><div class="tile-label">Rising at</div><div class="tile-val" id="tRate">—</div></div>
+      <div class="tile"><div class="tile-label">Time to critical</div><div class="tile-val" id="tEta">—</div></div>
+      <div class="tile"><div class="tile-label">Surging</div><div class="tile-val" id="tTurb">—</div></div>
+    </div>
+    <div class="chart-wrap">
+      <svg id="chart" role="img" aria-label="Push force over the last two minutes"></svg>
+      <div class="tooltip" id="tip" hidden></div>
+    </div>
+    <p class="muted small" id="reasons"></p>
+  </section>
+
+  <section class="card nodes-card">
+    <div class="card-head"><h2>Sensor nodes</h2><span class="muted" id="nodeSummary"></span></div>
+    <div class="table-wrap">
+      <table id="nodes">
+        <thead><tr><th>Seg</th><th>Location</th><th>Status</th><th class="num">Force N</th><th class="num">Risk</th><th>Link</th><th class="num">Battery</th><th class="num">Signal</th><th>Sensors</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card sim-card" id="simCard" hidden>
+    <div class="card-head"><h2>Simulator (no hardware needed)</h2><span class="muted" id="simStatus"></span></div>
+    <div class="sim-row">
+      <span class="lbl">Scenario</span>
+      <button class="btn seg" data-scn="calm">Calm</button>
+      <button class="btn seg" data-scn="buildup">Crowd build-up</button>
+      <button class="btn seg" data-scn="surge">Crowd surge wave</button>
+    </div>
+    <div class="sim-row">
+      <span class="lbl">Response</span>
+      <button class="btn toggle" id="entryBtn">Stop entry</button>
+      <button class="btn toggle" data-gate="G1">Open G1</button>
+      <button class="btn toggle" data-gate="G2">Open G2</button>
+    </div>
+    <div class="sim-row">
+      <span class="lbl">Faults</span>
+      <select id="failSel"></select>
+      <button class="btn toggle" id="failBtn">Take node offline</button>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Open API: <a href="/docs" target="_blank">/docs</a> · <a href="/api/state" target="_blank">/api/state</a></span>
+  <span class="muted">Session data is logged to server/logs for post-event review.</span>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
