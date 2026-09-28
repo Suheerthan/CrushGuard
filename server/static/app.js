@@ -114,10 +114,11 @@ class VenueMap {
       e.line.setAttribute("stroke", c); e.halo.setAttribute("stroke", c);
       const blink = lv === "red" ? (Math.sin(t * 8) > 0 ? 0.75 : 0.35) : lv === "amber" ? 0.45 : 0.2;
       e.halo.setAttribute("opacity", s.online ? blink : 0);
-      e.line.setAttribute("stroke-dasharray", s.online ? "" : "0.6 0.6");
+      e.line.setAttribute("stroke-dasharray", !s.online ? "0.6 0.6" : s.collapsed ? "1.2 0.7" : "");
       e.lab.textContent = s.id + (s.id === selected ? " ◂" : "");
       e.lab.setAttribute("fill", s.id === selected ? COLORS.accent : COLORS.text);
-      e.val.textContent = s.online ? `${Math.round(s.f)} N` : "offline";
+      e.val.textContent = !s.online ? "offline" : s.collapsed ? `DOWN · ${Math.round(s.tilt || 0)}°` : `${Math.round(s.f)} N`;
+      e.val.setAttribute("fill", s.collapsed ? COLORS.critical : COLORS["text-2"]);
       const h = this.heatEls[s.id];
       if (h) {
         h.setAttribute("fill", `url(#${P}-heat-${s.online ? s.level : "green"})`);
@@ -262,7 +263,9 @@ function renderBanner(st, prefix = "") {
   $("bIcon").textContent = lv === "red" ? "!" : lv === "amber" ? "▲" : "✓";
   if (lv === "red") {
     const help = st.alerts.find((a) => a.active && a.key && a.key.startsWith("help:"));
-    $("bTitle").textContent = prefix + (st.wave.length ? `CRITICAL: crowd wave across ${st.wave.join(", ")}`
+    const down = st.alerts.find((a) => a.active && a.key && a.key.startsWith("collapse:"));
+    $("bTitle").textContent = prefix + (down ? `CRITICAL: ${down.title}`
+      : st.wave.length ? `CRITICAL: crowd wave across ${st.wave.join(", ")}`
       : help ? `CRITICAL: ${help.title}` : `CRITICAL: crush risk at ${worst ? worst.label : "venue"}`);
     $("bSub").textContent = "Stop entry, open relief gates, announce on PA now";
   } else if (lv === "amber") {
@@ -349,6 +352,7 @@ function renderVenue() {
       (s.reasons.length ? "Why: " + s.reasons.join(" · ") : `Status: ${LEVEL_TEXT[s.level]}`) +
       (s.stewards && s.stewards.length ? ` · Stewards here: ${s.stewards.join(", ")}` : " · No steward assigned");
     $("pushBtn").hidden = st.mode !== "simulation";
+    $("restoreBtn").hidden = !s.collapsed;
     chart.draw(history[s.id] || [], st.thresholds, st.t, fc);
   }
   renderNodes(st);
@@ -414,31 +418,50 @@ function buildFailSelect() {
   $("failSel").innerHTML = venue.segments.map((s) => `<option value="${s.id}">${s.id} (node ${s.node})</option>`).join("");
 }
 function renderSim(st) {
-  const sim = st.sim;
-  $("simPanel").hidden = !sim;
-  if (view !== "replay") {
+  const sim = st.sim, ops = st.ops || { entry_open: true, gates_open: [] };
+  document.querySelectorAll(".sim-only").forEach((n) => { n.hidden = !sim; });
+  $("ctlTitle").textContent = sim ? "Controls" : "Response log";
+  if (view !== "replay" && view !== "plan") {
     const chip = $("modeChip");
     chip.textContent = st.mode === "simulation" ? "SIMULATION" : "LIVE SENSORS";
     chip.className = "chip " + (st.mode === "simulation" ? "sim" : "live") + (st.gateway_ok ? "" : " bad");
     if (!st.gateway_ok) chip.textContent += " · gateway lost";
   }
-  if (!sim) return;
-  document.querySelectorAll("[data-scn]").forEach((b) => b.classList.toggle("on", b.dataset.scn === sim.scenario));
   document.querySelectorAll("[data-gate]").forEach((b) => {
-    const open = sim.gates_open.includes(b.dataset.gate);
+    const open = ops.gates_open.includes(b.dataset.gate);
     b.classList.toggle("on", open); b.textContent = (open ? "Close " : "Open ") + b.dataset.gate;
   });
-  $("entryBtn").classList.toggle("on", !sim.entry_open);
-  $("entryBtn").textContent = sim.entry_open ? "Stop entry" : "Resume entry";
+  $("entryBtn").classList.toggle("on", !ops.entry_open);
+  $("entryBtn").textContent = ops.entry_open ? "Stop entry" : "Resume entry";
+  renderEnv(st.env);
+  if (!sim) { $("simStatus").textContent = "press when you act, so the report has the timings"; return; }
+  document.querySelectorAll("[data-scn]").forEach((b) => b.classList.toggle("on", b.dataset.scn === sim.scenario));
   $("failBtn").textContent = sim.offline.includes($("failSel").value) ? "Bring node back" : "Take node offline";
-  $("simStatus").textContent = `scenario: ${sim.scenario}`;
+  $("collapseBtn").textContent = `Barricade collapse at ${selected}`;
+  $("simStatus").textContent = `scenario: ${sim.scenario}` + (sim.collapsed.length ? ` · barricade down: ${sim.collapsed.join(", ")}` : "");
+  if (!renderSim._envInit) { $("envT").value = sim.temp_c; $("envH").value = sim.rh; renderSim._envInit = true; }
+}
+function renderEnv(env) {
+  const chip = $("envChip");
+  if (!env) { chip.hidden = true; return; }
+  chip.hidden = false;
+  chip.textContent = `Feels like ${Math.round(env.heat_index_c)} °C · ${env.category}`;
+  chip.className = "chip" + (env.multiplier >= 1.2 ? " heat-danger" : env.multiplier > 1 ? " heat-caution" : "");
+  chip.title = `${env.temp_c} °C, ${env.rh}% humidity. Pressure limits ${env.multiplier > 1 ? "lowered by " + Math.round((1 - 1 / env.multiplier) * 100) + "%" : "normal"}.`;
 }
 document.querySelectorAll("[data-scn]").forEach((b) => b.onclick = () => api("/api/sim", { action: "scenario", value: b.dataset.scn }));
 document.querySelectorAll("[data-gate]").forEach((b) => b.onclick = () =>
-  api("/api/sim", { action: "gate", value: b.dataset.gate, on: !live.sim.gates_open.includes(b.dataset.gate) }));
-$("entryBtn").onclick = () => api("/api/sim", { action: "entry", on: !live.sim.entry_open });
+  api("/api/action", { action: "gate", value: b.dataset.gate, on: !(live.ops.gates_open || []).includes(b.dataset.gate) }));
+$("entryBtn").onclick = () => api("/api/action", { action: "entry", on: !live.ops.entry_open });
 $("failBtn").onclick = () => { const id = $("failSel").value; api("/api/sim", { action: "offline", value: id, on: !live.sim.offline.includes(id) }); };
 $("pushBtn").onclick = () => api("/api/sim", { action: "push", value: selected });
+$("collapseBtn").onclick = () => api("/api/sim", { action: "collapse", value: selected, on: true });
+$("restoreBtn").onclick = () => api(`/api/segments/${selected}/restore`, {});
+$("envBtn").onclick = () => api("/api/sim", { action: "env", value: `${$("envT").value},${$("envH").value}` });
+document.querySelectorAll("[data-env]").forEach((b) => b.onclick = () => {
+  const [t, h] = b.dataset.env.split(","); $("envT").value = t; $("envH").value = h;
+  api("/api/sim", { action: "env", value: b.dataset.env });
+});
 $("identifyBtn").onclick = () => { const s = venue.segments.find((x) => x.id === selected); if (s) api(`/api/nodes/${s.node}/identify`, {}); };
 
 // ================================================================ PA + sound
@@ -601,7 +624,31 @@ function renderReplay() {
   rchart.draw(pts, tl.thresholds, st.t, s.online ? forecastPts(s.f, s.rate) : []);
   drawTimeline();
   renderLog(st);
+  renderReplayStats();
 }
+function fmtDur(sec) {
+  if (sec == null) return "—";
+  const a = Math.abs(sec);
+  const txt = a < 60 ? `${Math.round(a)} s` : `${Math.floor(a / 60)} min ${Math.round(a % 60)} s`;
+  return sec < 0 ? `${txt} before` : txt;
+}
+function renderReplayStats() {
+  const S = rp.tl.stats; if (!S) return;
+  if (rp._statsFor === rp.tl.name + rp.tl.end) return;
+  rp._statsFor = rp.tl.name + rp.tl.end;
+  const inc = S.incidents[0];
+  const cards = [
+    ["Critical incidents", S.incidents.length, S.incidents.length ? "red" : "green", `${fmtDur(S.time_red_s)} in red in total`],
+    ["Warning before critical", inc ? fmtDur(inc.warning_lead_s) : "—", "", "amber came this long before red"],
+    ["Steward on it", inc && inc.steward ? fmtDur(inc.steward_delay_s) : "—", "", inc && inc.steward ? `${inc.steward}, after red` : "no steward response logged"],
+    ["First action", inc && inc.first_action ? fmtDur(inc.action_delay_s) : "—", "", inc && inc.first_action ? `${inc.first_action}, after red` : "no action logged"],
+    ["Recovered in", inc ? fmtDur(inc.duration_s) : "—", "", "red until back below critical"],
+    ["Peak push", `${Math.round(S.peak_force_n)} N`, "", `${S.alerts.critical} critical / ${S.alerts.warning} warning alerts`],
+  ];
+  $("rStats").innerHTML = cards.map(([l, v, c, sub]) => `<div class="kpi ${c}"><div class="k-val">${esc(v)}</div><div class="k-label">${esc(l)}</div><div class="k-sub">${esc(sub)}</div></div>`).join("");
+  $("rStatsNote").textContent = S.incidents.length > 1 ? `showing the first of ${S.incidents.length} incidents; the report lists all` : "";
+}
+$("reportBtn").onclick = () => { if (rp.tl) window.open("/report?session=" + encodeURIComponent(rp.tl.name), "_blank"); };
 function eventText(e) {
   switch (e.kind) {
     case "respond": return [`${e.steward} responding at ${e.segment}`, "resp"];
@@ -694,13 +741,73 @@ function replayTick(now) {
 }
 requestAnimationFrame(replayTick);
 
+// ================================================================ plan view (pre-event capacity)
+const PRESETS = {
+  rally: { name: "Political rally, open ground", area_m2: 3000, crowd: 12000, front_share: 30, front_area_m2: 500, exit_width_m: 10, entry_width_m: 4, arrival_hours: 1.5, barricade_m: 64, target_egress_min: 10, stepped: false },
+  temple: { name: "Temple festival, queue complex", area_m2: 1800, crowd: 6000, front_share: 50, front_area_m2: 300, exit_width_m: 6, entry_width_m: 3, arrival_hours: 3, barricade_m: 120, target_egress_min: 10, stepped: true },
+  stadium: { name: "Stadium gates before a match", area_m2: 2500, crowd: 9000, front_share: 40, front_area_m2: 400, exit_width_m: 14, entry_width_m: 5, arrival_hours: 1, barricade_m: 80, target_egress_min: 8, stepped: false },
+};
+function planInputs() {
+  const f = $("planForm"), o = {};
+  for (const el_ of f.elements) {
+    if (!el_.name) continue;
+    o[el_.name] = el_.type === "checkbox" ? el_.checked : el_.type === "number" ? parseFloat(el_.value) : el_.value;
+  }
+  o.front_share = (o.front_share || 0) / 100;
+  return o;
+}
+let planTimer = null;
+async function runPlan() {
+  const r = await api("/api/plan", planInputs());
+  const lvl = r.overall;
+  $("planOverall").className = "pill " + lvl;
+  $("planOverall").textContent = lvl === "red" ? "Unsafe as planned" : lvl === "amber" ? "Needs changes" : "Within planning figures";
+  drawGauge(r);
+  const cards = [
+    ["Front of stage", `${r.front_density} /m²`, r.front_band.level, r.front_band.label],
+    ["Whole ground", `${r.avg_density} /m²`, r.avg_band.level, r.avg_band.label],
+    ["Time to empty", `${r.egress_min} min`, r.egress_min > r.target_egress_min ? "amber" : "green", `target ${r.target_egress_min} min · need ${r.exit_width_needed_m} m of exits`],
+    ["Entry queue at peak", r.queue_peak ? `${r.queue_peak.toLocaleString()} people` : "none", r.queue_peak ? "amber" : "green", `${r.arrival_rate_ppm.toLocaleString()} arriving/min vs ${r.entry_capacity_ppm.toLocaleString()} capacity`],
+    ["Comfortable capacity", r.comfortable_capacity.toLocaleString(), "", `upper limit ${r.upper_capacity.toLocaleString()} at 5 /m²`],
+    ["CrushGuard kit", `${r.sensors} sensors`, "", `about ₹${r.cost_inr.toLocaleString("en-IN")} incl. gateway`],
+  ];
+  $("planKpis").innerHTML = cards.map(([l, v, c, sub]) => `<div class="kpi ${c}"><div class="k-val">${esc(v)}</div><div class="k-label">${esc(l)}</div><div class="k-sub">${esc(sub)}</div></div>`).join("");
+  $("planRecs").innerHTML = r.recommendations.map((x) => `<li>${esc(x)}</li>`).join("");
+  $("planAssume").textContent = `Assumptions: density ${r.assumptions.density_bands}; flow ${r.assumptions.flow}; peak arrivals ${r.assumptions.peaking_factor}× the average. ` +
+    "Planning guidance only: confirm with a crowd-safety professional and local rules (e.g. NDMA crowd management guidelines).";
+}
+function drawGauge(r) {
+  const svg = $("densityGauge"), W = svg.clientWidth || 600, H = 86, m = { l: 10, r: 10 }, max = 8;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.innerHTML = "";
+  const x = (d) => m.l + (Math.min(max, d) / max) * (W - m.l - m.r);
+  const bands = [[0, 2, COLORS.good, "comfortable"], [2, 4, "#7a8f2a", "busy"], [4, 5, COLORS.warning, "very dense"], [5, 6, "#e0702a", "dangerous"], [6, 8, COLORS.critical, "crush risk"]];
+  for (const [a, b, c, lab] of bands) {
+    el("rect", { x: x(a) + 1, y: 30, width: x(b) - x(a) - 2, height: 14, rx: 3, fill: c, opacity: 0.85 }, svg);
+    el("text", { x: (x(a) + x(b)) / 2, y: 60, "text-anchor": "middle" }, svg).textContent = lab;
+  }
+  for (const d of [0, 2, 4, 5, 6, 8]) el("text", { x: x(d), y: 76, "text-anchor": d === 0 ? "start" : d === 8 ? "end" : "middle" }, svg).textContent = d === 8 ? "8+ /m²" : d;
+  for (const [d, lab, dy] of [[r.avg_density, "whole ground", 0], [r.front_density, "front of stage", 0]]) {
+    const cx = x(d);
+    el("path", { d: `M${cx - 6},12 L${cx + 6},12 L${cx},26 Z`, fill: COLORS.text }, svg);
+    el("text", { x: Math.min(W - 60, Math.max(40, cx)), y: 9 + dy, "text-anchor": "middle" }, svg).textContent = `${lab} ${d}`;
+  }
+}
+$("planForm").addEventListener("input", () => { clearTimeout(planTimer); planTimer = setTimeout(runPlan, 250); });
+document.querySelectorAll("[data-preset]").forEach((b) => b.onclick = () => {
+  const p = PRESETS[b.dataset.preset], f = $("planForm");
+  for (const [k, v] of Object.entries(p)) { const i = f.elements[k]; if (!i) continue; if (i.type === "checkbox") i.checked = v; else i.value = v; }
+  runPlan();
+});
+
 // ================================================================ tabs
 function switchView(v) {
   view = v;
-  for (const name of ["venue", "national", "replay"]) $("view-" + name).hidden = name !== v;
+  for (const name of ["venue", "national", "replay", "plan"]) $("view-" + name).hidden = name !== v;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.view === v));
-  $("bActions").hidden = v === "replay";
-  if (v === "replay") {
+  $("bActions").hidden = v === "replay" || v === "plan";
+  $("banner").hidden = v === "plan";
+  if (v === "plan") { $("modeChip").textContent = "PLANNING"; $("modeChip").className = "chip replay"; runPlan(); }
+  else if (v === "replay") {
     $("modeChip").textContent = "REPLAY"; $("modeChip").className = "chip replay";
     if (!rp.tl) loadSessions().catch(() => {}); else renderReplay();
   } else if (live) { renderVenue(); renderNational(); }
@@ -728,7 +835,7 @@ function connect() {
       h.push([msg.t, s.f]);
       while (h.length && h[0][0] < msg.t - HISTORY_S) h.shift();
     }
-    if (view !== "replay") { renderVenue(); if (view === "national") renderNational(); }
+    if (view !== "replay" && view !== "plan") { renderVenue(); if (view === "national") renderNational(); }
     else renderVenue();   // keep alerts/sound live while reviewing
   };
   ws.onopen = () => { $("linkChip").textContent = "server connected"; $("linkChip").classList.remove("bad"); };
